@@ -25,27 +25,7 @@ export function LoginForm() {
           }),
         });
         const raw = await res.text();
-        // #region agent log
-        fetch("http://127.0.0.1:7320/ingest/c57f3afe-b42b-482a-a5e2-2a9d8d044626", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "e65dec" },
-          body: JSON.stringify({
-            sessionId: "e65dec",
-            runId: "live-login",
-            hypothesisId: "D",
-            location: "LoginForm.tsx:onSubmit",
-            message: "login response",
-            data: {
-              status: res.status,
-              ok: res.ok,
-              bodyPreview: raw.slice(0, 500),
-              host: typeof window !== "undefined" ? window.location.host : null,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => undefined);
-        // #endregion
-        let json: { error?: string; code?: string; ok?: boolean } = {};
+        let json: { error?: string; ok?: boolean } = {};
         try {
           json = raw ? JSON.parse(raw) : {};
         } catch {
@@ -53,11 +33,7 @@ export function LoginForm() {
         }
         setBusy(false);
         if (!res.ok) {
-          setError(
-            json.code === "DB_ERROR" && "detail" in json && typeof (json as { detail?: string }).detail === "string"
-              ? `Database unavailable: ${(json as { detail: string }).detail}`
-              : (json.error ?? "Could not sign in"),
-          );
+          setError(json.error ?? "Could not sign in");
           return;
         }
         router.push("/projects");

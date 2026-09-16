@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { storedFilePath } from "@/lib/paths";
 import { needsMp3Playback } from "@/lib/audio-format";
-import { deleteSpacesObject } from "@/lib/spaces";
+import { deleteSpacesObject, isSafeStoredKey, isSpacesConfigured } from "@/lib/spaces";
 
 const PLAYBACK_SUFFIX = ".play.mp3";
 const LEGACY_M4A_SUFFIX = ".play.m4a";
@@ -68,7 +68,12 @@ export function hasPlaybackSidecar(storedFilename: string) {
 }
 
 export function isPlaybackReady(storedFilename: string, originalFilename: string, mimeType: string) {
-  return hasPlaybackSidecar(storedFilename) || !needsMp3Playback(originalFilename, mimeType);
+  if (!needsMp3Playback(originalFilename, mimeType)) return true;
+  if (hasPlaybackSidecar(storedFilename)) return true;
+  // Spaces-backed originals stream via /api/audio without a local MP3 sidecar.
+  // Avoid blocking the waveform on browser ffmpeg.wasm (cPanel has no server ffmpeg).
+  if (isSpacesConfigured() && isSafeStoredKey(storedFilename)) return true;
+  return false;
 }
 
 export function savePlaybackSidecar(storedFilename: string, bytes: Uint8Array | Buffer) {

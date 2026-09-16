@@ -27,9 +27,7 @@ function ensureFfmpegPublic() {
   const dest = path.join(__dirname, "public", "ffmpeg", "0.12.10");
   const wasm = path.join(dest, "ffmpeg-core.wasm");
   try {
-    if (fs.existsSync(wasm) && fs.statSync(wasm).size > 1_000_000) {
-      return { ok: true, skipped: true, dest };
-    }
+    if (fs.existsSync(wasm) && fs.statSync(wasm).size > 1_000_000) return;
     const coreDir = path.join(__dirname, "node_modules", "@ffmpeg", "core", "dist", "esm");
     const workerDir = path.join(__dirname, "node_modules", "@ffmpeg", "ffmpeg", "dist", "esm");
     fs.mkdirSync(dest, { recursive: true });
@@ -44,43 +42,9 @@ function ensureFfmpegPublic() {
       fs.copyFileSync(from, path.join(dest, name));
     }
     console.log("[arp] copied ffmpeg.wasm to public/ffmpeg");
-    return { ok: true, skipped: false, dest };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    console.error("[arp] ffmpeg copy failed (CDN fallback will be used)", error);
-    return { ok: false, error, dest };
+    console.error("[arp] ffmpeg copy failed (CDN fallback will be used)", err);
   }
-}
-
-function probeSqlite() {
-  const dataDir = process.env.DATA_DIR || path.join(__dirname, "data");
-  const dbPath = path.join(dataDir, "app.db");
-  const result = {
-    ok: false,
-    cwd: process.cwd(),
-    dirname: __dirname,
-    dataDir,
-    dbPath,
-    node: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    driver: "node:sqlite",
-    error: null,
-    errCode: null,
-  };
-  try {
-    fs.mkdirSync(dataDir, { recursive: true });
-    fs.accessSync(dataDir, fs.constants.W_OK);
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(dbPath);
-    db.prepare("select 1 as n").get();
-    db.close();
-    result.ok = true;
-  } catch (err) {
-    result.error = err instanceof Error ? err.message : String(err);
-    result.errCode = err && typeof err === "object" && "code" in err ? String(err.code) : null;
-  }
-  return result;
 }
 
 const app = next({ dev, hostname, port, dir: __dirname });
@@ -89,28 +53,10 @@ const handle = app.getRequestHandler();
 app
   .prepare()
   .then(() => {
-    const ffmpeg = ensureFfmpegPublic();
-    const boot = probeSqlite();
-    if (boot.ok) {
-      console.log("[arp] sqlite ok", boot.driver, boot.dbPath);
-    } else {
-      console.error("[arp] sqlite FAIL", boot.error, boot);
-    }
+    ensureFfmpegPublic();
 
     createServer((req, res) => {
       const parsedUrl = parse(req.url, true);
-      if (parsedUrl.pathname === "/api/db-check") {
-        const body = JSON.stringify({
-          ...boot,
-          ...probeSqlite(),
-          ffmpeg,
-          rev: 5,
-        });
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json");
-        res.end(body);
-        return;
-      }
       handle(req, res, parsedUrl).catch((err) => {
         console.error("Request error", req.url, err);
         res.statusCode = 500;
