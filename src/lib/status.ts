@@ -1,0 +1,19 @@
+import type { VersionStatus } from "@/lib/types";
+
+export const STATUS_LABELS: Record<VersionStatus, string> = {
+  in_progress: "In Progress",
+  review_requested: "Review Requested",
+  changes_requested: "Changes Requested",
+  approved: "Approved",
+};
+
+export const STATUS_SHORT: Record<VersionStatus, string> = {
+  in_progress: "Progress",
+  review_requested: "Review",
+  changes_requested: "Changes",
+  approved: "Approved",
+};
+
+export function isVersionStatus(value: string): value is VersionStatus {
+  return value in STATUS_LABELS;
+}
