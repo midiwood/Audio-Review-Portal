@@ -1,10 +1,7 @@
 import {
-  countTrackVersions,
   createNotification,
   findUserById,
-  getTrack,
   getUsersForEmails,
-  getVersion,
 } from "@/lib/data";
 import { STATUS_LABELS } from "@/lib/status";
 import type { NotificationType, VersionStatus } from "@/lib/types";
@@ -102,8 +99,8 @@ export async function notifyUpload(input: {
     trackId: input.trackId,
     versionId: input.versionId,
     title: isFirst
-      ? `${actorName} added “${input.trackTitle}”`
-      : `${actorName} uploaded v${input.versionNumber} of “${input.trackTitle}”`,
+      ? `${actorName} published “${input.trackTitle}”`
+      : `${actorName} published v${input.versionNumber} of “${input.trackTitle}”`,
     body: `${input.projectName} · ready for review`,
   });
 }
@@ -164,32 +161,5 @@ export async function notifyStatusChange(input: {
     versionId: input.versionId,
     title: `“${input.trackTitle}” is ${STATUS_LABELS[input.status].toLowerCase()}`,
     body: input.projectName,
-  });
-}
-
-export async function notifyAfterVersionCreated(input: {
-  projectId: string;
-  projectName: string;
-  ownerId: string;
-  actorUserId: string;
-  trackId: string;
-  versionId: string;
-  isComposerUpload: boolean;
-  wasNewTrack: boolean;
-}) {
-  if (!input.isComposerUpload) return;
-  const track = getTrack(input.trackId);
-  const version = getVersion(input.versionId);
-  if (!track || !version) return;
-  await notifyUpload({
-    projectId: input.projectId,
-    projectName: input.projectName,
-    ownerId: input.ownerId,
-    actorUserId: input.actorUserId,
-    trackId: track.id,
-    trackTitle: track.title,
-    versionId: version.id,
-    versionNumber: version.versionNumber,
-    isNewTrack: input.wasNewTrack || countTrackVersions(track.id) <= 1,
   });
 }

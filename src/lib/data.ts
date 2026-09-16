@@ -610,7 +610,17 @@ export function getProjectById(
 export function getProjectByShareToken(token: string): ProjectDto | null {
   const project = getDb().select().from(projects).where(eq(projects.shareToken, token)).get();
   if (!project || project.deletedAt != null) return null;
-  return loadProjectDetail(project, { includeComments: true, includeInvite: false, includeArchived: false });
+  const detail = loadProjectDetail(project, { includeComments: true, includeInvite: false, includeArchived: false });
+  // Reviewers only see published versions (not drafts awaiting audition/publish).
+  return {
+    ...detail,
+    tracks: detail.tracks
+      .map((track) => ({
+        ...track,
+        versions: track.versions.filter((version) => version.status !== "in_progress"),
+      }))
+      .filter((track) => track.versions.length > 0),
+  };
 }
 
 export function updateProject(id: string, patch: { name?: string; notes?: string }) {
@@ -790,15 +800,28 @@ export function getVersionAccess(versionId: string, options?: { includeArchived?
 
 export function updateVersion(
   versionId: string,
-  patch: { status?: VersionStatus; durationSeconds?: number },
+  patch: { status?: VersionStatus; durationSeconds?: number; unreadForAdmin?: boolean },
 ) {
   const updates: Partial<typeof versions.$inferInsert> = {};
   if (patch.status) updates.status = patch.status;
   if (patch.durationSeconds !== undefined) updates.durationSeconds = patch.durationSeconds;
+  if (patch.unreadForAdmin !== undefined) updates.unreadForAdmin = patch.unreadForAdmin ? 1 : 0;
   if (Object.keys(updates).length) {
     getDb().update(versions).set(updates).where(eq(versions.id, versionId)).run();
   }
   return getVersion(versionId);
+}
+
+/** Move a draft version into review (sets review_requested + unread for admin). */
+export function publishVersion(versionId: string) {
+  const version = getVersion(versionId);
+  if (!version || version.status !== "in_progress") return null;
+  getDb()
+    .update(versions)
+    .set({ status: "review_requested", unreadForAdmin: 1 })
+    .where(eq(versions.id, versionId))
+    .run();
+  return getVersion(versionId)!;
 }
 
 export function createComment(input: {

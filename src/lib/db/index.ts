@@ -1,30 +1,31 @@
 import fs from "node:fs";
-import Database from "better-sqlite3";
+import path from "node:path";
 import { hashSync } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { nanoid } from "nanoid";
 import { dbFile, ensureDataDirs } from "@/lib/paths";
+import { openSqlite, type SqliteDatabase } from "./node-sqlite-shim";
 import * as schema from "./schema";
 
 type GlobalDb = {
-  sqlite?: Database.Database;
+  sqlite?: SqliteDatabase;
   drizzle?: ReturnType<typeof drizzle<typeof schema>>;
 };
 
 const globalForDb = globalThis as unknown as GlobalDb;
 
-function columns(sqlite: Database.Database, table: string) {
+function columns(sqlite: SqliteDatabase, table: string) {
   return (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((col) => col.name);
 }
 
-function ensureColumn(sqlite: Database.Database, table: string, name: string, ddl: string) {
+function ensureColumn(sqlite: SqliteDatabase, table: string, name: string, ddl: string) {
   if (columns(sqlite, table).includes(name)) return false;
   sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`);
   return true;
 }
 
-function createTables(sqlite: Database.Database) {
+function createTables(sqlite: SqliteDatabase) {
   sqlite.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -146,7 +147,7 @@ function createTables(sqlite: Database.Database) {
   `);
 }
 
-function migrateSchema(sqlite: Database.Database) {
+function migrateSchema(sqlite: SqliteDatabase) {
   let changed = false;
   const refCols = columns(sqlite, `"references"`);
   if (refCols.length > 0 && !refCols.includes("track_id")) {
@@ -282,14 +283,15 @@ export function getDb() {
   ensureDataDirs();
   if (!globalForDb.sqlite) {
     const file = dbFile();
-    fs.mkdirSync(file.slice(0, file.lastIndexOf("/")), { recursive: true });
-    globalForDb.sqlite = new Database(file);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    globalForDb.sqlite = openSqlite(file);
   }
   globalForDb.sqlite.pragma("foreign_keys = ON");
   const rebuilt = migrateSchema(globalForDb.sqlite);
   createTables(globalForDb.sqlite);
   if (!globalForDb.drizzle || rebuilt) {
-    globalForDb.drizzle = drizzle(globalForDb.sqlite, { schema });
+    // Shim matches the better-sqlite3 surface drizzle expects (prepare/run/get/all/raw/transaction).
+    globalForDb.drizzle = drizzle(globalForDb.sqlite as never, { schema });
     seedOwner(globalForDb.drizzle);
   }
   return globalForDb.drizzle;

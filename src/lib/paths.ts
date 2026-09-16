@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export function dataDir() {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
   return path.join(process.cwd(), "data");
 }
 

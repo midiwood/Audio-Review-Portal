@@ -37,8 +37,37 @@ export async function GET(request: Request, context: { params: Promise<{ version
       range: download ? null : request.headers.get("range"),
     });
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
     console.error("Audio playback failed", err);
-    return jsonError("Could not read audio", 500);
+    // #region agent log
+    fetch("http://127.0.0.1:7320/ingest/c57f3afe-b42b-482a-a5e2-2a9d8d044626", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "e65dec" },
+      body: JSON.stringify({
+        sessionId: "e65dec",
+        runId: "audio-500",
+        hypothesisId: "A2",
+        location: "api/audio/[versionId]/route.ts",
+        message: "audio read failed",
+        data: {
+          versionId,
+          detail,
+          storedFilename: access.version.storedFilename,
+          spaces: isSpacesConfigured(),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => undefined);
+    // #endregion
+    return Response.json(
+      {
+        error: "Could not read audio",
+        code: "AUDIO_READ",
+        detail,
+        spaces: isSpacesConfigured(),
+      },
+      { status: 500 },
+    );
   }
 }
 

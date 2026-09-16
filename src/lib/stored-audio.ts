@@ -86,6 +86,11 @@ export async function redirectOrStreamStoredFile(options: {
 
   const playable = resolvePlayableAudio(options.storedFilename, options.mimeType, original);
   const filePath = options.downloadName && original ? storedFilePath(options.storedFilename) : playable.filePath;
+  if (!existsSync(filePath)) {
+    throw new Error(
+      `Audio file missing on disk (${options.storedFilename}). Spaces configured: ${isSpacesConfigured()}`,
+    );
+  }
   const stat = statSync(filePath);
   const fileSize = stat.size;
   const mimeType = options.downloadName

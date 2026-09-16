@@ -240,7 +240,11 @@ export function WaveformPlayer({
 
   const overlay = !ready
     ? activeClip?.error ||
-      (activeClip?.converting ? "Converting to MP3…" : activeClip?.url ? "Loading waveform…" : "Preparing audio…")
+      (activeClip?.url
+        ? "Loading waveform…"
+        : activeClip?.converting
+          ? "Converting to MP3…"
+          : "Preparing audio…")
     : "";
 
   return (

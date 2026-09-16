@@ -84,7 +84,6 @@ export function ReviewWorkspace({ mode, project: initial, shareToken, ownerName,
   const isAdmin = mode === "admin";
   const isComposer = mode === "composer";
   const isReviewer = mode === "reviewer";
-  const canComment = isAdmin || isReviewer;
   const canSeeComments = isAdmin || isComposer || isReviewer;
   const composerIds = useMemo(() => new Set(project.composers.map((item) => item.id)), [project.composers]);
 
@@ -111,14 +110,7 @@ export function ReviewWorkspace({ mode, project: initial, shareToken, ownerName,
   const versions = track?.versions ?? [];
 
   function trackBadgeStatus(item: TrackDto): VersionStatus | null {
-    const latest = item.versions.at(-1);
-    if (!latest) return null;
-    const hasComment = latest.comments.length > 0;
-    if (!hasComment && latest.status === "in_progress") {
-      const composerOwned = Boolean(item.composerId && composerIds.has(item.composerId));
-      if (composerOwned || isComposer) return "review_requested";
-    }
-    return latest.status;
+    return item.versions.at(-1)?.status ?? null;
   }
 
   const isOwnTrack = ownsTrack(track);
@@ -176,6 +168,8 @@ export function ReviewWorkspace({ mode, project: initial, shareToken, ownerName,
   }, [track]);
 
   const version = versions.find((v) => v.id === versionId) ?? versions.at(-1);
+  const canComment = (isAdmin || isReviewer) && Boolean(version && version.status !== "in_progress");
+  const canPublish = Boolean(isOwnTrack && version && version.status === "in_progress");
   const { clips, converting } = useTrackPlayback(track?.id, versions, shareToken, versionId);
   const playerClips = useMemo(
     () =>
@@ -409,6 +403,22 @@ export function ReviewWorkspace({ mode, project: initial, shareToken, ownerName,
       body: JSON.stringify({ status }),
     });
     if (res.ok) await reload();
+  }
+
+  async function publishCurrentVersion() {
+    if (!version || !canPublish) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/versions/${version.id}/publish`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not publish");
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not publish");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveNotes(notes: string) {
@@ -1166,6 +1176,23 @@ export function ReviewWorkspace({ mode, project: initial, shareToken, ownerName,
                 }}
               />
 
+              {canPublish && (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brass/40 bg-brass-dim/40 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-ink">Draft — audition before review</p>
+                    <p className="text-xs text-mute">Publish when this version is ready for the studio to review.</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void publishCurrentVersion()}
+                    className="shrink-0 rounded-md bg-brass px-5 py-2.5 text-sm font-semibold text-bg hover:brightness-110 disabled:opacity-40"
+                  >
+                    Publish for review
+                  </button>
+                </div>
+              )}
+
               {isApproved && !isReviewer && (
                 <DeliveryPanel
                   trackId={track.id}
@@ -1208,7 +1235,7 @@ export function ReviewWorkspace({ mode, project: initial, shareToken, ownerName,
                 onAuthorName={isReviewer ? setReviewerName : undefined}
                 submitting={busy}
                 canAdd={canComment}
-                canReply={canComment || isComposer}
+                canReply={(canComment || isComposer) && version.status !== "in_progress"}
                 canResolve={isOwnTrack}
                 showResolved={isAdmin || isOwnTrack}
                 defaultShowChecked={isAdmin && !isOwnTrack}

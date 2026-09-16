@@ -1,6 +1,6 @@
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
-import { findUserById } from "@/lib/data";
+import { findUserById, updateUser } from "@/lib/data";
 import { jsonError } from "@/lib/http";
 import { avatarFilePath } from "@/lib/paths";
 
@@ -11,6 +11,15 @@ export async function GET(_request: Request, context: { params: Promise<{ userId
   const user = findUserById(userId);
   if (!user?.avatarFilename) return jsonError("Not found", 404);
   const filePath = avatarFilePath(user.avatarFilename);
+  if (!existsSync(filePath)) {
+    // Stale DB pointer after deploy without data/avatars — clear so UI stops requesting it.
+    try {
+      updateUser(userId, { avatarFilename: null });
+    } catch {
+      /* ignore */
+    }
+    return jsonError("Not found", 404);
+  }
   try {
     const stat = statSync(filePath);
     const stream = createReadStream(filePath);

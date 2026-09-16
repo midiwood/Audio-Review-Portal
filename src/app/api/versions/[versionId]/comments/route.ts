@@ -7,6 +7,9 @@ export async function POST(request: Request, context: { params: Promise<{ versio
   const { versionId } = await context.params;
   const access = getVersionAccess(versionId);
   if (!access) return jsonError("Not found", 404);
+  if (access.version.status === "in_progress") {
+    return jsonError("Publish this version before commenting", 400);
+  }
 
   const body = (await request.json().catch(() => null)) as {
     authorName?: string;

@@ -9,7 +9,7 @@ import {
   updateVersion,
 } from "@/lib/data";
 import { jsonError } from "@/lib/http";
-import { notifyStatusChange } from "@/lib/notify";
+import { notifyStatusChange, notifyUpload } from "@/lib/notify";
 import { removeStoredAudio } from "@/lib/playback";
 import { isVersionStatus } from "@/lib/status";
 
@@ -34,8 +34,24 @@ export async function PATCH(request: Request, context: { params: Promise<{ versi
   if (body?.status !== undefined) {
     if (!isAdmin) return jsonError("Unauthorized", 401);
     if (!isVersionStatus(body.status)) return jsonError("Invalid status");
-    const version = updateVersion(versionId, { status: body.status });
-    if (user) {
+    const previous = access.version.status;
+    const version = updateVersion(versionId, {
+      status: body.status,
+      unreadForAdmin: body.status === "review_requested" ? true : undefined,
+    });
+    if (user && body.status === "review_requested" && previous === "in_progress") {
+      await notifyUpload({
+        projectId: access.project.id,
+        projectName: access.project.name,
+        ownerId: access.project.ownerId,
+        actorUserId: access.track.composerId ?? user.userId,
+        trackId: access.track.id,
+        trackTitle: access.track.title,
+        versionId,
+        versionNumber: access.version.versionNumber,
+        isNewTrack: countTrackVersions(access.track.id) <= 1,
+      });
+    } else if (user) {
       await notifyStatusChange({
         projectId: access.project.id,
         projectName: access.project.name,
