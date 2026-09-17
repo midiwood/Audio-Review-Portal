@@ -6,8 +6,9 @@ export const VERSION_STATUSES = [
 ] as const;
 
 export type VersionStatus = (typeof VERSION_STATUSES)[number];
-export type UserRole = "admin" | "composer";
+export type UserRole = "superadmin" | "member";
 export type WorkspaceMode = "admin" | "composer" | "reviewer";
+export type PlanLabel = "Superadmin" | "Subscriber" | "Free member";
 
 export type CommentDto = {
   id: string;
@@ -80,6 +81,7 @@ export type ProjectDto = {
   name: string;
   notes: string;
   ownerId: string;
+  owner: ComposerDto;
   shareToken: string;
   inviteToken?: string;
   createdAt: number;
@@ -94,6 +96,7 @@ export type ProjectListItem = {
   createdAt: number;
   trackCount: number;
   unreadCount: number;
+  ownership: "owned" | "shared";
 };
 
 export type NotificationType = "comment" | "version" | "track" | "status";

@@ -35,9 +35,11 @@ function createTables(sqlite: SqliteDatabase) {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL DEFAULT '',
-      role TEXT NOT NULL DEFAULT 'composer',
+      role TEXT NOT NULL DEFAULT 'member',
+      subscribed INTEGER NOT NULL DEFAULT 0,
       avatar_filename TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      deleted_at INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS projects (
@@ -168,8 +170,12 @@ function migrateSchema(sqlite: SqliteDatabase) {
 
   if (columns(sqlite, "users").length > 0) {
     changed = ensureColumn(sqlite, "users", "name", "TEXT NOT NULL DEFAULT ''") || changed;
-    changed = ensureColumn(sqlite, "users", "role", "TEXT NOT NULL DEFAULT 'composer'") || changed;
+    changed = ensureColumn(sqlite, "users", "role", "TEXT NOT NULL DEFAULT 'member'") || changed;
+    changed = ensureColumn(sqlite, "users", "subscribed", "INTEGER NOT NULL DEFAULT 0") || changed;
     changed = ensureColumn(sqlite, "users", "avatar_filename", "TEXT") || changed;
+    changed = ensureColumn(sqlite, "users", "deleted_at", "INTEGER") || changed;
+    sqlite.exec(`UPDATE users SET role = 'superadmin', subscribed = 1 WHERE role = 'admin'`);
+    sqlite.exec(`UPDATE users SET role = 'member' WHERE role = 'composer'`);
   }
   if (columns(sqlite, "tracks").length > 0) {
     changed = ensureColumn(sqlite, "tracks", "composer_id", "TEXT") || changed;
@@ -244,7 +250,7 @@ function migrateSchema(sqlite: SqliteDatabase) {
 
   const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
   if (ownerEmail) {
-    sqlite.prepare(`UPDATE users SET role = 'admin' WHERE email = ?`).run(ownerEmail);
+    sqlite.prepare(`UPDATE users SET role = 'superadmin', subscribed = 1 WHERE email = ?`).run(ownerEmail);
   }
   sqlite.exec(`
     UPDATE users SET name = substr(email, 1, instr(email, '@') - 1)
@@ -261,8 +267,11 @@ function seedOwner(db: ReturnType<typeof drizzle<typeof schema>>) {
 
   const existing = db.select().from(schema.users).where(eq(schema.users.email, email)).get();
   if (existing) {
-    if (existing.role !== "admin") {
-      db.update(schema.users).set({ role: "admin" }).where(eq(schema.users.id, existing.id)).run();
+    if (existing.role !== "superadmin" || !existing.subscribed) {
+      db.update(schema.users)
+        .set({ role: "superadmin", subscribed: 1 })
+        .where(eq(schema.users.id, existing.id))
+        .run();
     }
     return;
   }
@@ -272,7 +281,8 @@ function seedOwner(db: ReturnType<typeof drizzle<typeof schema>>) {
       id: nanoid(),
       email,
       name: email.split("@")[0] || "Admin",
-      role: "admin",
+      role: "superadmin",
+      subscribed: 1,
       passwordHash: hashSync(password, 10),
       createdAt: Date.now(),
     })

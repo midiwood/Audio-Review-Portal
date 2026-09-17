@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { appendPreparedAvatar } from "@/lib/avatar-client";
 
-export function JoinForm({ token, projectName }: { token: string; projectName: string }) {
+export function SignupForm() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,30 +19,37 @@ export function JoinForm({ token, projectName }: { token: string; projectName: s
         try {
           const form = e.currentTarget;
           const data = new FormData(form);
-          data.set("token", token);
           await appendPreparedAvatar(data, (form.elements.namedItem("photo") as HTMLInputElement).files?.[0]);
-          const res = await fetch("/api/auth/join", { method: "POST", body: data });
-          const json = await res.json();
+          const res = await fetch("/api/auth/signup", { method: "POST", body: data });
+          const raw = await res.text();
+          let json: { error?: string } = {};
+          try {
+            json = raw ? JSON.parse(raw) : {};
+          } catch {
+            json = { error: "Invalid server response" };
+          }
           if (!res.ok) {
-            setError(json.error ?? "Could not join");
+            setError(json.error ?? "Could not create account");
             return;
           }
-          router.push(`/projects/${json.projectId}`);
+          router.push("/projects");
           router.refresh();
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Could not join");
+          setError(err instanceof Error ? err.message : "Could not create account");
         } finally {
           setBusy(false);
         }
       }}
     >
-      <p className="text-sm text-mute">
-        You&apos;re joining <span className="text-ink">{projectName}</span>. Create your composer account, or sign in
-        with an existing one.
-      </p>
       <label className="block space-y-1 text-sm">
         <span className="text-mute">Name</span>
-        <input name="name" className="w-full rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-brass" />
+        <input
+          name="name"
+          type="text"
+          required
+          autoComplete="name"
+          className="w-full rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-brass"
+        />
       </label>
       <label className="block space-y-1 text-sm">
         <span className="text-mute">Email</span>
@@ -50,6 +57,7 @@ export function JoinForm({ token, projectName }: { token: string; projectName: s
           name="email"
           type="email"
           required
+          autoComplete="username"
           className="w-full rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-brass"
         />
       </label>
@@ -59,6 +67,8 @@ export function JoinForm({ token, projectName }: { token: string; projectName: s
           name="password"
           type="password"
           required
+          minLength={8}
+          autoComplete="new-password"
           className="w-full rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-brass"
         />
       </label>
@@ -71,7 +81,7 @@ export function JoinForm({ token, projectName }: { token: string; projectName: s
       </label>
       {error && <p className="text-sm text-rose-300">{error}</p>}
       <button disabled={busy} className="w-full rounded-md bg-brass py-2.5 text-sm font-medium text-bg disabled:opacity-40">
-        Join project
+        Create account
       </button>
     </form>
   );

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ReviewWorkspace } from "@/components/review/ReviewWorkspace";
 import { requireUser } from "@/lib/auth";
-import { findUserById, getProjectAccess, getProjectById, toProfileDto } from "@/lib/data";
+import { getProjectAccess, getProjectById } from "@/lib/data";
 
 export default async function ProjectPage({
   params,
@@ -22,7 +22,6 @@ export default async function ProjectPage({
     includeInvite: access.kind === "admin",
   });
   if (!project) notFound();
-  const profile = findUserById(user.userId);
 
   return (
     <ReviewWorkspace
@@ -30,8 +29,8 @@ export default async function ProjectPage({
       project={project}
       ownerName={user.name}
       userId={user.userId}
-      avatarUrl={profile ? toProfileDto(profile).avatarUrl : null}
       initialTrackId={trackId}
+      embedded
     />
   );
 }

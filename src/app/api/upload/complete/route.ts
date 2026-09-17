@@ -61,13 +61,15 @@ export async function POST(request: Request) {
     markPlaybackReady(storedFilename);
   }
 
-  // Draft until the owner publishes for review.
+  // Project owner / studio: live in review immediately.
+  // Composer: draft until they publish for review.
+  const asDraft = access.kind !== "admin";
   const version = createVersion({
     trackId,
     originalFilename,
     storedFilename,
     mimeType,
-    status: "in_progress",
+    status: asDraft ? "in_progress" : "review_requested",
     unreadForAdmin: false,
   });
 

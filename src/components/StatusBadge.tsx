@@ -24,17 +24,27 @@ export function StatusBadge({ status, compact }: { status: VersionStatus; compac
   );
 }
 
+export const STUDIO_STATUSES = [
+  "review_requested",
+  "changes_requested",
+  "approved",
+] as const satisfies readonly VersionStatus[];
+
 export function StatusDropdown({
   status,
   onChange,
   disabled,
+  options = VERSION_STATUSES,
 }: {
   status: VersionStatus;
   onChange: (status: VersionStatus) => void;
   disabled?: boolean;
+  /** Statuses the actor may set (studio never includes Draft). */
+  options?: readonly VersionStatus[];
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const choices = options.includes(status) ? options : ([status, ...options] as VersionStatus[]);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +75,7 @@ export function StatusDropdown({
           role="listbox"
           className="absolute top-full right-0 z-30 mt-1 w-32 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-xl"
         >
-          {VERSION_STATUSES.map((option) => (
+          {choices.map((option) => (
             <li key={option} role="option" aria-selected={option === status}>
               <button
                 type="button"

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "@/lib/db";
 import { isPlaybackReady } from "@/lib/playback";
@@ -20,6 +20,7 @@ import type {
   DeliveryKind,
   NotificationDto,
   NotificationType,
+  PlanLabel,
   ProjectDto,
   ProjectListItem,
   ReferenceDto,
@@ -37,15 +38,29 @@ export type ProjectAccess = {
 };
 
 export function findUserByEmail(email: string) {
-  return getDb().select().from(users).where(eq(users.email, email.trim().toLowerCase())).get();
+  const user = getDb().select().from(users).where(eq(users.email, email.trim().toLowerCase())).get();
+  if (!user || user.deletedAt != null) return undefined;
+  return user;
+}
+
+/** Includes soft-deleted rows — for unique-email checks on signup. */
+export function emailTaken(email: string) {
+  return Boolean(getDb().select({ id: users.id }).from(users).where(eq(users.email, email.trim().toLowerCase())).get());
 }
 
 export function findUserById(id: string) {
-  return getDb().select().from(users).where(eq(users.id, id)).get();
+  const user = getDb().select().from(users).where(eq(users.id, id)).get();
+  if (!user || user.deletedAt != null) return undefined;
+  return user;
 }
 
 function avatarUrlFor(user: { id: string; avatarFilename: string | null }) {
   return user.avatarFilename ? `/api/avatars/${user.id}?v=${encodeURIComponent(user.avatarFilename)}` : null;
+}
+
+export function normalizeUserRole(role: string | null | undefined): UserRole {
+  if (role === "superadmin" || role === "admin") return "superadmin";
+  return "member";
 }
 
 export function createUser(input: {
@@ -53,9 +68,11 @@ export function createUser(input: {
   name: string;
   passwordHash: string;
   role?: UserRole;
+  subscribed?: boolean;
   avatarFilename?: string | null;
 }) {
   const id = nanoid();
+  const role = input.role ?? "member";
   getDb()
     .insert(users)
     .values({
@@ -63,7 +80,8 @@ export function createUser(input: {
       email: input.email.trim().toLowerCase(),
       name: input.name.trim(),
       passwordHash: input.passwordHash,
-      role: input.role ?? "composer",
+      role,
+      subscribed: role === "superadmin" || input.subscribed ? 1 : 0,
       avatarFilename: input.avatarFilename ?? null,
       createdAt: Date.now(),
     })
@@ -78,6 +96,7 @@ export function updateUser(
     email?: string;
     passwordHash?: string;
     avatarFilename?: string | null;
+    subscribed?: boolean;
   },
 ) {
   const updates: Partial<typeof users.$inferInsert> = {};
@@ -85,6 +104,7 @@ export function updateUser(
   if (patch.email !== undefined) updates.email = patch.email.trim().toLowerCase();
   if (patch.passwordHash !== undefined) updates.passwordHash = patch.passwordHash;
   if (patch.avatarFilename !== undefined) updates.avatarFilename = patch.avatarFilename;
+  if (patch.subscribed !== undefined) updates.subscribed = patch.subscribed ? 1 : 0;
   if (Object.keys(updates).length) {
     getDb().update(users).set(updates).where(eq(users.id, id)).run();
   }
@@ -92,11 +112,17 @@ export function updateUser(
 }
 
 export function toProfileDto(user: typeof users.$inferSelect) {
+  const role = normalizeUserRole(user.role);
+  const subscribed = Boolean(user.subscribed) || role === "superadmin";
+  const planLabel: PlanLabel =
+    role === "superadmin" ? "Superadmin" : subscribed ? "Subscriber" : "Free member";
   return {
     id: user.id,
     name: user.name || user.email.split("@")[0],
     email: user.email,
-    role: (user.role === "admin" ? "admin" : "composer") as UserRole,
+    role,
+    subscribed,
+    planLabel,
     avatarUrl: avatarUrlFor(user),
   };
 }
@@ -207,14 +233,14 @@ export function listInviteableComposers(projectId: string): ComposerDto[] {
   const rows = db
     .select()
     .from(users)
-    .where(and(eq(users.role, "composer"), notInArray(users.id, exclude)))
+    .where(and(eq(users.role, "member"), isNull(users.deletedAt), notInArray(users.id, exclude)))
     .all();
   return rows.map(toComposerDto);
 }
 
 export function findComposerById(userId: string) {
   const user = findUserById(userId);
-  if (!user || user.role !== "composer") return null;
+  if (!user || normalizeUserRole(user.role) !== "member") return null;
   return user;
 }
 
@@ -353,11 +379,19 @@ function assembleProject(
       };
     });
 
+  const ownerRow =
+    usersById.get(project.ownerId) ??
+    getDb().select().from(users).where(eq(users.id, project.ownerId)).get();
+  const owner: ComposerDto = ownerRow
+    ? toComposerDto(ownerRow)
+    : { id: project.ownerId, name: "Studio", email: "", avatarUrl: null };
+
   return {
     id: project.id,
     name: project.name,
     notes: project.notes,
     ownerId: project.ownerId,
+    owner,
     shareToken: project.shareToken,
     inviteToken: options.includeInvite ? project.inviteToken : undefined,
     createdAt: project.createdAt,
@@ -480,38 +514,38 @@ const studioVisibleTrack = sql`(
   )
 )`;
 
-export function listProjectsForUser(userId: string, role: UserRole): ProjectListItem[] {
+export function listProjectsForUser(userId: string): ProjectListItem[] {
   const db = getDb();
-  if (role === "admin") {
-    const rows = db
-      .select({
-        id: projects.id,
-        name: projects.name,
-        createdAt: projects.createdAt,
-        trackCount: sql<number>`count(distinct case when ${tracks.id} is not null and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
-          "track_count",
-        ),
-        unreadCount: sql<number>`count(distinct case when ${versions.unreadForAdmin} = 1 and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
-          "unread_count",
-        ),
-      })
-      .from(projects)
-      .leftJoin(tracks, eq(tracks.projectId, projects.id))
-      .leftJoin(versions, eq(versions.trackId, tracks.id))
-      .where(and(eq(projects.ownerId, userId), isNull(projects.deletedAt)))
-      .groupBy(projects.id)
-      .orderBy(desc(projects.createdAt))
-      .all();
-    return rows.map((row) => ({
+
+  const owned = db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      createdAt: projects.createdAt,
+      trackCount: sql<number>`count(distinct case when ${tracks.id} is not null and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
+        "track_count",
+      ),
+      unreadCount: sql<number>`count(distinct case when ${versions.unreadForAdmin} = 1 and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
+        "unread_count",
+      ),
+    })
+    .from(projects)
+    .leftJoin(tracks, eq(tracks.projectId, projects.id))
+    .leftJoin(versions, eq(versions.trackId, tracks.id))
+    .where(and(eq(projects.ownerId, userId), isNull(projects.deletedAt)))
+    .groupBy(projects.id)
+    .orderBy(desc(projects.createdAt))
+    .all()
+    .map((row) => ({
       id: row.id,
       name: row.name,
       createdAt: row.createdAt,
       trackCount: Number(row.trackCount),
       unreadCount: Number(row.unreadCount),
+      ownership: "owned" as const,
     }));
-  }
 
-  const rows = db
+  const shared = db
     .select({
       id: projects.id,
       name: projects.name,
@@ -532,20 +566,93 @@ export function listProjectsForUser(userId: string, role: UserRole): ProjectList
     .where(
       and(
         isNull(projects.deletedAt),
+        ne(projects.ownerId, userId),
         or(isNotNull(projectMembers.id), isNotNull(tracks.id)),
       ),
     )
     .groupBy(projects.id)
     .orderBy(desc(projects.createdAt))
-    .all();
+    .all()
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: row.createdAt,
+      trackCount: Number(row.trackCount),
+      unreadCount: 0,
+      ownership: "shared" as const,
+    }));
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    createdAt: row.createdAt,
-    trackCount: Number(row.trackCount),
-    unreadCount: 0,
-  }));
+  return [...owned, ...shared].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function listUsersForAdmin() {
+  return getDb()
+    .select()
+    .from(users)
+    .where(isNull(users.deletedAt))
+    .orderBy(desc(users.createdAt))
+    .all()
+    .map((user) => toProfileDto(user));
+}
+
+export function listDeletedUsersForAdmin() {
+  return getDb()
+    .select()
+    .from(users)
+    .where(isNotNull(users.deletedAt))
+    .orderBy(desc(users.deletedAt))
+    .all()
+    .map((user) => ({
+      ...toProfileDto(user),
+      deletedAt: user.deletedAt as number,
+    }));
+}
+
+export function setUserSubscribed(userId: string, subscribed: boolean) {
+  const user = findUserById(userId);
+  if (!user) return null;
+  if (normalizeUserRole(user.role) === "superadmin") {
+    return toProfileDto(updateUser(userId, { subscribed: true }));
+  }
+  return toProfileDto(updateUser(userId, { subscribed }));
+}
+
+export function softDeleteUser(userId: string, actorId: string): { ok: true } | { ok: false; error: string } {
+  if (userId === actorId) return { ok: false, error: "You cannot delete your own account" };
+
+  const row = getDb().select().from(users).where(eq(users.id, userId)).get();
+  if (!row || row.deletedAt != null) return { ok: false, error: "Not found" };
+  if (normalizeUserRole(row.role) === "superadmin") {
+    return { ok: false, error: "Superadmin accounts cannot be deleted" };
+  }
+
+  const now = Date.now();
+  const db = getDb();
+  db.update(users).set({ deletedAt: now }).where(eq(users.id, userId)).run();
+  db.update(projects)
+    .set({ deletedAt: now })
+    .where(and(eq(projects.ownerId, userId), isNull(projects.deletedAt)))
+    .run();
+  db.delete(projectMembers).where(eq(projectMembers.userId, userId)).run();
+  return { ok: true };
+}
+
+/** Clears deletedAt and restores owned projects that were trashed in the same soft-delete. */
+export function restoreUser(userId: string): { ok: true; user: ReturnType<typeof toProfileDto> } | { ok: false; error: string } {
+  const row = getDb().select().from(users).where(eq(users.id, userId)).get();
+  if (!row || row.deletedAt == null) return { ok: false, error: "Not found" };
+
+  const stamp = row.deletedAt;
+  const db = getDb();
+  db.update(users).set({ deletedAt: null }).where(eq(users.id, userId)).run();
+  db.update(projects)
+    .set({ deletedAt: null })
+    .where(and(eq(projects.ownerId, userId), eq(projects.deletedAt, stamp)))
+    .run();
+
+  const restored = findUserById(userId);
+  if (!restored) return { ok: false, error: "Not found" };
+  return { ok: true, user: toProfileDto(restored) };
 }
 
 export function listArchivedProjectsForOwner(ownerId: string): ProjectListItem[] {
@@ -572,6 +679,7 @@ export function listArchivedProjectsForOwner(ownerId: string): ProjectListItem[]
     createdAt: row.createdAt,
     trackCount: Number(row.trackCount),
     unreadCount: 0,
+    ownership: "owned" as const,
   }));
 }
 
@@ -598,13 +706,55 @@ export function getProjectById(
 ): ProjectDto | null {
   const project = getDb().select().from(projects).where(eq(projects.id, id)).get();
   if (!project || project.deletedAt != null) return null;
-  return loadProjectDetail(project, {
+
+  // Studio uploads should not sit in composer-style draft; promote any leftover owner drafts.
+  if (options.kind === "admin") {
+    promoteOwnerDraftVersions(project.id, project.ownerId);
+  }
+
+  const detail = loadProjectDetail(project, {
     composerId: options.kind === "composer" ? options.composerId : undefined,
     includeComments: options.includeComments,
     includeInvite: options.includeInvite,
     includeComposers: options.kind === "admin",
     includeArchived: true,
   });
+
+  // Project owner / reviewers only see submitted versions — drafts are private to the composer.
+  if (options.kind === "admin") {
+    return {
+      ...detail,
+      tracks: withoutDraftVersions(detail.tracks),
+      archivedTracks: withoutDraftVersions(detail.archivedTracks),
+    };
+  }
+  return detail;
+}
+
+function withoutDraftVersions(list: TrackDto[]): TrackDto[] {
+  return list
+    .map((track) => ({
+      ...track,
+      versions: track.versions.filter((version) => version.status !== "in_progress"),
+    }))
+    .filter((track) => track.versions.length > 0);
+}
+
+/** Owner/studio tracks skip the composer draft gate — mark leftover drafts as submitted. */
+export function promoteOwnerDraftVersions(projectId: string, ownerId: string) {
+  const db = getDb();
+  const trackRows = db
+    .select({ id: tracks.id, composerId: tracks.composerId })
+    .from(tracks)
+    .where(eq(tracks.projectId, projectId))
+    .all()
+    .filter((row) => !row.composerId || row.composerId === ownerId);
+  if (trackRows.length === 0) return;
+  const ids = trackRows.map((row) => row.id);
+  db.update(versions)
+    .set({ status: "review_requested" })
+    .where(and(inArray(versions.trackId, ids), eq(versions.status, "in_progress")))
+    .run();
 }
 
 export function getProjectByShareToken(token: string): ProjectDto | null {
@@ -614,12 +764,7 @@ export function getProjectByShareToken(token: string): ProjectDto | null {
   // Reviewers only see published versions (not drafts awaiting audition/publish).
   return {
     ...detail,
-    tracks: detail.tracks
-      .map((track) => ({
-        ...track,
-        versions: track.versions.filter((version) => version.status !== "in_progress"),
-      }))
-      .filter((track) => track.versions.length > 0),
+    tracks: withoutDraftVersions(detail.tracks),
   };
 }
 
@@ -711,11 +856,27 @@ export function canManageTrackMedia(
 
 export function isTrackApproved(trackId: string) {
   const rows = getDb()
-    .select({ status: versions.status, versionNumber: versions.versionNumber })
+    .select({ status: versions.status })
     .from(versions)
-    .where(eq(versions.trackId, trackId))
+    .where(and(eq(versions.trackId, trackId), eq(versions.status, "approved")))
     .all();
-  return rows.sort((a, b) => a.versionNumber - b.versionNumber).at(-1)?.status === "approved";
+  return rows.length > 0;
+}
+
+/** Mark one version as the sole approved mix on its track; siblings that were approved become review_requested. */
+export function approveVersion(versionId: string) {
+  const version = getVersion(versionId);
+  if (!version) return null;
+  if (version.status === "in_progress") return null;
+  const db = getDb();
+  db.update(versions)
+    .set({ status: "review_requested" })
+    .where(
+      and(eq(versions.trackId, version.trackId), ne(versions.id, versionId), eq(versions.status, "approved")),
+    )
+    .run();
+  db.update(versions).set({ status: "approved" }).where(eq(versions.id, versionId)).run();
+  return getVersion(versionId)!;
 }
 
 export function canAccessDeliveries(userId: string, trackId: string) {

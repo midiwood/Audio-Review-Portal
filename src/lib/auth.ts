@@ -1,14 +1,15 @@
 import { getIronSession, type SessionOptions } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { findUserById } from "@/lib/data";
-import type { UserRole } from "@/lib/types";
+import { findUserById, normalizeUserRole } from "@/lib/data";
+import type { PlanLabel, UserRole } from "@/lib/types";
 
 export type SessionUser = {
   userId: string;
   email: string;
   name: string;
   role: UserRole;
+  subscribed: boolean;
 };
 
 type SessionData = {
@@ -32,6 +33,20 @@ export function getSessionOptions(): SessionOptions {
   };
 }
 
+export function isSuperadmin(user: Pick<SessionUser, "role">) {
+  return user.role === "superadmin";
+}
+
+export function canCreateProjects(user: Pick<SessionUser, "role" | "subscribed">) {
+  return user.role === "superadmin" || user.subscribed;
+}
+
+export function planLabel(user: Pick<SessionUser, "role" | "subscribed">): PlanLabel {
+  if (user.role === "superadmin") return "Superadmin";
+  if (user.subscribed) return "Subscriber";
+  return "Free member";
+}
+
 export async function getSession() {
   return getIronSession<SessionData>(await cookies(), getSessionOptions());
 }
@@ -45,13 +60,20 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     userId: user.id,
     email: user.email,
     name: user.name || user.email.split("@")[0],
-    role: user.role === "admin" ? "admin" : "composer",
+    role: normalizeUserRole(user.role),
+    subscribed: Boolean(user.subscribed) || normalizeUserRole(user.role) === "superadmin",
   };
 }
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  return user;
+}
+
+export async function requireSuperadmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!isSuperadmin(user)) redirect("/projects");
   return user;
 }
 

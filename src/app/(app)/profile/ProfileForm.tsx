@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { UserRole } from "@/lib/types";
+import { appendPreparedAvatar } from "@/lib/avatar-client";
+import type { PlanLabel, UserRole } from "@/lib/types";
 
 type Profile = {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  subscribed: boolean;
+  planLabel: PlanLabel;
   avatarUrl: string | null;
 };
 
@@ -26,16 +29,24 @@ export function ProfileForm({ initial }: { initial: Profile }) {
         setBusy(true);
         setError("");
         setSaved(false);
-        const res = await fetch("/api/profile", { method: "PATCH", body: new FormData(e.currentTarget) });
-        const json = await res.json();
-        setBusy(false);
-        if (!res.ok) {
-          setError(json.error ?? "Could not save profile");
-          return;
+        try {
+          const form = e.currentTarget;
+          const data = new FormData(form);
+          await appendPreparedAvatar(data, (form.elements.namedItem("photo") as HTMLInputElement).files?.[0]);
+          const res = await fetch("/api/profile", { method: "PATCH", body: data });
+          const json = await res.json();
+          if (!res.ok) {
+            setError(json.error ?? "Could not save profile");
+            return;
+          }
+          setProfile(json.user);
+          setPreview(json.user.avatarUrl);
+          setSaved(true);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Could not save profile");
+        } finally {
+          setBusy(false);
         }
-        setProfile(json.user);
-        setPreview(json.user.avatarUrl);
-        setSaved(true);
       }}
     >
       <div className="flex items-center gap-4">
@@ -49,12 +60,14 @@ export function ProfileForm({ initial }: { initial: Profile }) {
         )}
         <div className="min-w-0">
           <p className="font-medium">{profile.name}</p>
-          <p className="text-sm text-mute">{profile.role === "admin" ? "Admin" : "Composer"}</p>
+          <p className="text-sm text-mute">{profile.planLabel}</p>
         </div>
       </div>
 
       <label className="block space-y-1 text-sm">
-        <span className="text-mute">Profile photo</span>
+        <span className="text-mute">
+          Profile photo <span className="text-mute/70">(optional)</span>
+        </span>
         <input
           name="photo"
           type="file"
@@ -66,6 +79,7 @@ export function ProfileForm({ initial }: { initial: Profile }) {
           }}
           className="w-full text-xs text-mute"
         />
+        <span className="block text-xs text-mute">Resized to a small square JPEG automatically.</span>
       </label>
 
       <label className="block space-y-1 text-sm">
