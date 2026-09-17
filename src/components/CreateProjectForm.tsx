@@ -10,7 +10,7 @@ export function CreateProjectForm() {
 
   return (
     <form
-      className="flex flex-col gap-2 sm:flex-row"
+      className="flex flex-wrap items-center gap-2"
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -35,11 +35,11 @@ export function CreateProjectForm() {
       <input
         name="name"
         required
-        placeholder="New project name"
-        className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brass"
+        placeholder="New project"
+        className="min-w-0 flex-1 rounded-md border border-line bg-bg px-3 py-1.5 text-sm outline-none focus:border-brass"
       />
-      <button disabled={busy} className="rounded-md bg-brass px-4 py-2 text-sm font-medium text-bg disabled:opacity-40">
-        Create project
+      <button disabled={busy} className="rounded-md bg-brass px-3 py-1.5 text-sm font-medium text-bg disabled:opacity-40">
+        Create
       </button>
       {error && <p className="w-full text-sm text-rose-300">{error}</p>}
     </form>

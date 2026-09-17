@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { appendPreparedAvatar } from "@/lib/avatar-client";
 
 export function JoinForm({ token, projectName }: { token: string; projectName: string }) {
   const router = useRouter();
@@ -15,18 +16,24 @@ export function JoinForm({ token, projectName }: { token: string; projectName: s
         e.preventDefault();
         setBusy(true);
         setError("");
-        const form = e.currentTarget;
-        const data = new FormData(form);
-        data.set("token", token);
-        const res = await fetch("/api/auth/join", { method: "POST", body: data });
-        const json = await res.json();
-        setBusy(false);
-        if (!res.ok) {
-          setError(json.error ?? "Could not join");
-          return;
+        try {
+          const form = e.currentTarget;
+          const data = new FormData(form);
+          data.set("token", token);
+          await appendPreparedAvatar(data, (form.elements.namedItem("photo") as HTMLInputElement).files?.[0]);
+          const res = await fetch("/api/auth/join", { method: "POST", body: data });
+          const json = await res.json();
+          if (!res.ok) {
+            setError(json.error ?? "Could not join");
+            return;
+          }
+          router.push(`/projects/${json.projectId}`);
+          router.refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Could not join");
+        } finally {
+          setBusy(false);
         }
-        router.push(`/projects/${json.projectId}`);
-        router.refresh();
       }}
     >
       <p className="text-sm text-mute">
@@ -56,8 +63,11 @@ export function JoinForm({ token, projectName }: { token: string; projectName: s
         />
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-mute">Profile photo</span>
+        <span className="text-mute">
+          Profile photo <span className="text-mute/70">(optional)</span>
+        </span>
         <input name="photo" type="file" accept="image/*" className="w-full text-xs text-mute" />
+        <span className="block text-xs text-mute">Resized to a small square JPEG automatically.</span>
       </label>
       {error && <p className="text-sm text-rose-300">{error}</p>}
       <button disabled={busy} className="w-full rounded-md bg-brass py-2.5 text-sm font-medium text-bg disabled:opacity-40">

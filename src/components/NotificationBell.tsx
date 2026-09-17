@@ -36,7 +36,7 @@ function formatWhen(ts: number) {
   return `${days}d`;
 }
 
-export function NotificationBell() {
+export function NotificationBell({ align = "right" }: { align?: "left" | "right" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationDto[]>([]);
@@ -160,7 +160,11 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="absolute top-full right-0 z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-surface shadow-xl">
+        <div
+          className={`absolute top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-surface shadow-xl ${
+            align === "left" ? "left-0" : "right-0"
+          }`}
+        >
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <p className="text-xs font-medium tracking-wide text-mute uppercase">Notifications</p>
             {items.length > 0 && (

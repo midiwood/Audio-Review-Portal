@@ -1,4 +1,4 @@
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, isSuperadmin } from "@/lib/auth";
 import { jsonError } from "@/lib/http";
 import { applySpacesCors, getSpacesPublicSettings, saveSpacesSettings } from "@/lib/spaces";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export async function PUT(request: Request) {
   const user = await getSessionUser();
   if (!user) return jsonError("Unauthorized", 401);
-  if (user.role !== "admin") return jsonError("Forbidden", 403);
+  if (!isSuperadmin(user)) return jsonError("Forbidden", 403);
 
   const body = (await request.json().catch(() => null)) as {
     endpoint?: string;
@@ -56,6 +56,6 @@ export async function PUT(request: Request) {
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return jsonError("Unauthorized", 401);
-  if (user.role !== "admin") return jsonError("Forbidden", 403);
+  if (!isSuperadmin(user)) return jsonError("Forbidden", 403);
   return Response.json(getSpacesPublicSettings());
 }

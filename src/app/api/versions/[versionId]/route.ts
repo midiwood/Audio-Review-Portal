@@ -6,6 +6,7 @@ import {
   getProjectAccess,
   getVersionAccess,
   isTrackSharedWithStudio,
+  approveVersion,
   updateVersion,
 } from "@/lib/data";
 import { jsonError } from "@/lib/http";
@@ -35,10 +36,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ versi
     if (!isAdmin) return jsonError("Unauthorized", 401);
     if (!isVersionStatus(body.status)) return jsonError("Invalid status");
     const previous = access.version.status;
-    const version = updateVersion(versionId, {
-      status: body.status,
-      unreadForAdmin: body.status === "review_requested" ? true : undefined,
-    });
+    if (body.status === "approved" && previous === "in_progress") {
+      return jsonError("Publish the draft before approving");
+    }
+    const version =
+      body.status === "approved"
+        ? approveVersion(versionId)
+        : updateVersion(versionId, {
+            status: body.status,
+            unreadForAdmin: body.status === "review_requested" ? true : undefined,
+          });
+    if (!version) return jsonError("Could not update version", 400);
     if (user && body.status === "review_requested" && previous === "in_progress") {
       await notifyUpload({
         projectId: access.project.id,

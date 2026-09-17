@@ -1,15 +1,13 @@
-import fs from "node:fs";
 import { compareSync, hashSync } from "bcryptjs";
 import { saveLogin } from "@/lib/auth";
+import { saveOptionalAvatar } from "@/lib/avatar-server";
 import {
   addProjectMember,
   createUser,
   findUserByEmail,
   getProjectByInviteToken,
 } from "@/lib/data";
-import { extensionFor } from "@/lib/format";
 import { jsonError } from "@/lib/http";
-import { avatarFilePath } from "@/lib/paths";
 
 export const runtime = "nodejs";
 
@@ -19,7 +17,6 @@ export async function POST(request: Request) {
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const password = String(form.get("password") ?? "");
   const name = String(form.get("name") ?? "").trim();
-  const photo = form.get("photo");
 
   const project = getProjectByInviteToken(token);
   if (!project) return jsonError("Invite link is invalid", 404);
@@ -36,19 +33,21 @@ export async function POST(request: Request) {
   }
 
   if (!name) return jsonError("Name is required");
-  if (!(photo instanceof File) || photo.size === 0) return jsonError("A profile photo is required");
-  if (!photo.type.startsWith("image/")) return jsonError("Profile photo must be an image");
 
-  const ext = extensionFor(photo.name, photo.type) || ".jpg";
-  const filename = `${crypto.randomUUID()}${ext === ".bin" ? ".jpg" : ext}`;
-  fs.writeFileSync(avatarFilePath(filename), Buffer.from(await photo.arrayBuffer()));
+  let avatarFilename: string | null = null;
+  try {
+    avatarFilename = await saveOptionalAvatar(form.get("photo"));
+  } catch (err) {
+    return jsonError(err instanceof Error ? err.message : "Invalid profile photo");
+  }
 
   const user = createUser({
     email,
     name,
     passwordHash: hashSync(password, 10),
-    role: "composer",
-    avatarFilename: filename,
+    role: "member",
+    subscribed: false,
+    avatarFilename,
   });
   addProjectMember(project.id, user.id);
   await saveLogin(user.id);

@@ -9,14 +9,12 @@ type Props = {
   currentTime: number;
   authorName: string;
   currentUserId?: string;
-  onAuthorName?: (name: string) => void;
   onSubmit: (body: string, parentId?: string) => Promise<void>;
   onEdit?: (id: string, body: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
   onResolve?: (id: string, resolved: boolean) => Promise<void>;
   onJump: (seconds: number) => void;
   submitting?: boolean;
-  canAdd?: boolean;
   canReply?: boolean;
   canResolve?: boolean;
   showResolved?: boolean;
@@ -35,7 +33,7 @@ function isOwnComment(
   return Boolean(name && name === comment.authorName.trim().toLowerCase());
 }
 
-function CommentComposer({
+export function CommentComposer({
   placeholder,
   submitLabel,
   disabled,
@@ -96,6 +94,74 @@ function CommentComposer({
           className="flex-1 rounded-md bg-brass py-2 text-sm font-medium text-bg disabled:opacity-40"
         >
           {submitLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Quiet sticky footer composer — playhead time + one input, not a second content card. */
+export function AddCommentFooter({
+  currentTime,
+  authorName,
+  onAuthorName,
+  onSubmit,
+  submitting,
+  disabled,
+}: {
+  currentTime: number;
+  authorName: string;
+  onAuthorName?: (name: string) => void;
+  onSubmit: (body: string) => Promise<void>;
+  submitting?: boolean;
+  disabled?: boolean;
+}) {
+  const [value, setValue] = useState("");
+  const blocked = disabled || submitting || !authorName.trim();
+
+  async function send() {
+    const body = value.trim();
+    if (!body || blocked) return;
+    await onSubmit(body);
+    setValue("");
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {onAuthorName && (
+        <input
+          value={authorName}
+          onChange={(e) => onAuthorName(e.target.value)}
+          placeholder="Your name"
+          className="w-full rounded-md border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-brass"
+        />
+      )}
+      <div className="flex items-end gap-3">
+        <span className="mb-2.5 shrink-0 font-mono text-sm text-brass" title="Playhead">
+          {formatTime(currentTime)}
+        </span>
+        <textarea
+          rows={2}
+          value={value}
+          placeholder="Add a comment…"
+          disabled={blocked}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          className="min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-md border border-line bg-surface px-3.5 py-2.5 text-sm outline-none focus:border-brass disabled:opacity-40"
+        />
+        <button
+          type="button"
+          disabled={blocked || !value.trim()}
+          onClick={() => void send()}
+          className="shrink-0 rounded-md bg-brass px-3 py-2.5 text-sm font-medium text-bg disabled:opacity-40 sm:px-4"
+        >
+          <span className="sm:hidden">Post</span>
+          <span className="hidden sm:inline">Add comment</span>
         </button>
       </div>
     </div>
@@ -296,14 +362,12 @@ export function CommentPanel({
   currentTime,
   authorName,
   currentUserId,
-  onAuthorName,
   onSubmit,
   onEdit,
   onDelete,
   onResolve,
   onJump,
   submitting,
-  canAdd,
   canReply,
   canResolve,
   showResolved,
@@ -341,7 +405,7 @@ export function CommentPanel({
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
         {visible.length === 0 && (
           <li className="text-sm text-mute">
-            {comments.length === 0 ? "No comments on this version yet." : "No open comments."}
+            {comments.length === 0 ? "No comments" : "No open comments."}
           </li>
         )}
         {visible.map((comment) => (
@@ -362,25 +426,6 @@ export function CommentPanel({
           />
         ))}
       </ul>
-
-      {canAdd && (
-        <div className="mt-4 space-y-2 border-t border-line pt-4">
-          {onAuthorName && (
-            <input
-              value={authorName}
-              onChange={(e) => onAuthorName(e.target.value)}
-              placeholder="Your name"
-              className="w-full rounded-md border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-brass"
-            />
-          )}
-          <CommentComposer
-            placeholder={`Comment at ${formatTime(currentTime)}`}
-            submitLabel="Add comment"
-            disabled={submitting || !authorName.trim()}
-            onSend={(body) => onSubmit(body)}
-          />
-        </div>
-      )}
     </div>
   );
 }

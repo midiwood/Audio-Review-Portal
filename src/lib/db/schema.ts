@@ -5,9 +5,11 @@ export const users = sqliteTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull().default(""),
-  role: text("role").notNull().default("composer"),
+  role: text("role").notNull().default("member"),
+  subscribed: integer("subscribed").notNull().default(0),
   avatarFilename: text("avatar_filename"),
   createdAt: integer("created_at").notNull(),
+  deletedAt: integer("deleted_at"),
 });
 
 export const projects = sqliteTable("projects", {
