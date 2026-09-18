@@ -99,27 +99,6 @@ export type ProjectListItem = {
   ownership: "owned" | "shared";
 };
 
-export type LibraryTrackDto = {
-  id: string;
-  title: string;
-  projectId: string;
-  projectName: string;
-  ownership: "owned" | "shared";
-  composerId: string | null;
-  composerName: string;
-  composerAvatarUrl: string | null;
-  createdAt: number;
-  unread: boolean;
-  versionId: string;
-  versionNumber: number;
-  versionCount: number;
-  status: VersionStatus;
-  originalFilename: string;
-  durationSeconds: number | null;
-  playbackReady: boolean;
-  href: string;
-};
-
 export type NotificationType = "comment" | "version" | "track" | "status";
 
 export type NotificationDto = {

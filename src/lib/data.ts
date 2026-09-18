@@ -18,7 +18,6 @@ import type {
   ComposerDto,
   DeliveryDto,
   DeliveryKind,
-  LibraryTrackDto,
   NotificationDto,
   NotificationType,
   PlanLabel,
@@ -158,12 +157,6 @@ export function getProjectAccess(projectId: string, userId: string): ProjectAcce
     .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
     .get();
   if (member) return { kind: "composer", project };
-  const ownedTrack = db
-    .select({ id: tracks.id })
-    .from(tracks)
-    .where(and(eq(tracks.projectId, projectId), eq(tracks.composerId, userId)))
-    .get();
-  if (ownedTrack) return { kind: "composer", project };
   return null;
 }
 
@@ -556,7 +549,7 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
       ),
     })
     .from(projects)
-    .leftJoin(
+    .innerJoin(
       projectMembers,
       and(eq(projectMembers.projectId, projects.id), eq(projectMembers.userId, userId)),
     )
@@ -564,13 +557,7 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
       tracks,
       and(eq(tracks.projectId, projects.id), eq(tracks.composerId, userId), isNull(tracks.deletedAt)),
     )
-    .where(
-      and(
-        isNull(projects.deletedAt),
-        ne(projects.ownerId, userId),
-        or(isNotNull(projectMembers.id), isNotNull(tracks.id)),
-      ),
-    )
+    .where(and(isNull(projects.deletedAt), ne(projects.ownerId, userId)))
     .groupBy(projects.id)
     .orderBy(desc(projects.createdAt))
     .all()
@@ -584,59 +571,6 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
     }));
 
   return [...owned, ...shared].sort((a, b) => b.createdAt - a.createdAt);
-}
-
-/** Flat track list across owned + shared projects, with the same visibility rules as the workspace. */
-export function listTracksForUser(userId: string): LibraryTrackDto[] {
-  const projectList = listProjectsForUser(userId);
-  const rows: LibraryTrackDto[] = [];
-
-  for (const item of projectList) {
-    const access = getProjectAccess(item.id, userId);
-    if (!access) continue;
-    const project = getProjectById(item.id, {
-      kind: access.kind,
-      composerId: access.kind === "composer" ? userId : undefined,
-      includeComments: false,
-      includeInvite: false,
-    });
-    if (!project) continue;
-
-    for (const track of project.tracks) {
-      const preferred =
-        track.versions.find((version) => version.status === "approved") ?? track.versions.at(-1);
-      if (!preferred) continue;
-
-      const person =
-        (track.composerId && track.composerId === project.ownerId
-          ? project.owner
-          : project.composers.find((row) => row.id === track.composerId)) ??
-        (track.composerId === project.ownerId || !track.composerId ? project.owner : null);
-
-      rows.push({
-        id: track.id,
-        title: track.title,
-        projectId: project.id,
-        projectName: project.name,
-        ownership: item.ownership,
-        composerId: track.composerId,
-        composerName: track.composerName || person?.name || "Unknown",
-        composerAvatarUrl: person?.avatarUrl ?? null,
-        createdAt: track.createdAt,
-        unread: item.ownership === "owned" ? track.unread : false,
-        versionId: preferred.id,
-        versionNumber: preferred.versionNumber,
-        versionCount: track.versions.length,
-        status: preferred.status,
-        originalFilename: preferred.originalFilename,
-        durationSeconds: preferred.durationSeconds,
-        playbackReady: preferred.playbackReady,
-        href: `/projects/${project.id}?track=${track.id}`,
-      });
-    }
-  }
-
-  return rows.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function listUsersForAdmin() {
