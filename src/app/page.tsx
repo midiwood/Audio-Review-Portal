@@ -53,14 +53,14 @@ export default async function HomePage() {
           Hear every version. Leave notes that stick.
         </h1>
         <p className="mt-4 max-w-md animate-[fadeUp_0.7s_ease-out_0.22s_both] text-base leading-relaxed text-mute">
-          Upload takes, scrub waveforms, and share time-coded feedback with your studio or clients.
+          Join a studio invite to upload and review, or subscribe to create your own projects and share client links.
         </p>
         <div className="mt-10 flex flex-wrap items-center gap-4 animate-[fadeUp_0.7s_ease-out_0.32s_both]">
           <Link
             href="/signup"
             className="rounded-md bg-brass px-5 py-3 text-sm font-medium text-bg transition-opacity duration-300 hover:opacity-90"
           >
-            Sign up free
+            Create free account
           </Link>
           <Link
             href="/login"

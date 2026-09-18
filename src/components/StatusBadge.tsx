@@ -30,6 +30,9 @@ export const STUDIO_STATUSES = [
   "approved",
 ] as const satisfies readonly VersionStatus[];
 
+/** Track owners: approve delivery mix or mark needs changes — not full studio triage. */
+export const OWNER_STATUSES = ["changes_requested", "approved"] as const satisfies readonly VersionStatus[];
+
 export function StatusDropdown({
   status,
   onChange,
@@ -56,7 +59,7 @@ export function StatusDropdown({
   }, [open]);
 
   return (
-    <div className="relative w-32 shrink-0" ref={wrapRef}>
+    <div className="relative w-36 shrink-0" ref={wrapRef}>
       <button
         type="button"
         disabled={disabled}
@@ -73,7 +76,7 @@ export function StatusDropdown({
       {open && (
         <ul
           role="listbox"
-          className="absolute top-full right-0 z-30 mt-1 w-32 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-xl"
+          className="absolute top-full right-0 z-30 mt-1 w-36 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-xl"
         >
           {choices.map((option) => (
             <li key={option} role="option" aria-selected={option === status}>

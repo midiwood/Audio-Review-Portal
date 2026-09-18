@@ -14,7 +14,8 @@ export default async function SignupPage() {
           <p className="text-xs tracking-[0.25em] text-brass uppercase">Audio Review</p>
           <h1 className="mt-2 text-3xl font-medium">Create account</h1>
           <p className="mt-2 text-sm text-mute">
-            Free accounts can join shared projects and upload tracks. Creating your own projects needs a subscription.
+            Free accounts join invites and upload on shared projects. A subscription lets you create projects and invite
+            collaborators.
           </p>
         </div>
         <SignupForm />

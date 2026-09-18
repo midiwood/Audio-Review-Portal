@@ -182,7 +182,7 @@ export function NotificationBell({ align = "right" }: { align?: "left" | "right"
               <li className="px-3 py-6 text-center text-sm text-mute">No notifications yet.</li>
             )}
             {items.map((item) => (
-              <li key={item.id} className="bg-brass-dim/30">
+              <li key={item.id} className={item.readAt ? "bg-transparent" : "bg-brass-dim/30"}>
                 <a
                   href={item.href}
                   onClick={() => {
@@ -192,7 +192,7 @@ export function NotificationBell({ align = "right" }: { align?: "left" | "right"
                   className="block px-3 py-2.5 hover:bg-surface-2"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-ink">{item.title}</p>
+                    <p className={`text-sm ${item.readAt ? "text-mute" : "text-ink"}`}>{item.title}</p>
                     <span className="shrink-0 text-[10px] text-mute">{formatWhen(item.createdAt)}</span>
                   </div>
                   {item.body && <p className="mt-0.5 line-clamp-2 text-xs text-mute">{item.body}</p>}

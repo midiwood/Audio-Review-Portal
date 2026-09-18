@@ -58,8 +58,8 @@ export default async function ProjectsPage() {
       {bothEmpty ? (
         <p className="text-sm text-mute">
           {canCreate
-            ? "Create a project to invite collaborators and review uploads."
-            : "When someone invites you, shared projects appear here."}
+            ? "Create a project to invite composers and share a client review link."
+            : "Free plan: when a studio invites you, shared projects appear here. Creating your own projects needs a subscription."}
         </p>
       ) : (
         <>
@@ -69,7 +69,9 @@ export default async function ProjectsPage() {
             )}
             {owned.length === 0 ? (
               canCreate ? null : (
-                <p className="text-sm text-mute">Creating projects requires a subscription.</p>
+                <p className="text-sm text-mute">
+                  Creating projects needs a subscription. You can still open shared projects you were invited to.
+                </p>
               )
             ) : (
               <ProjectList projects={owned} showDelete={canCreate} />

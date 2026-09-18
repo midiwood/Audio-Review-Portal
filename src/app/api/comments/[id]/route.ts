@@ -3,6 +3,7 @@ import {
   canManageTrackMedia,
   deleteComment,
   getCommentAccess,
+  getProjectAccess,
   isCommentAuthor,
   isTrackSharedWithStudio,
   updateCommentBody,
@@ -39,8 +40,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const user = await getSessionUser();
 
   if (typeof body?.resolved === "boolean") {
-    if (!user || !canManageTrackMedia(user.userId, access.track.id)) {
-      return jsonError("Only the track owner can mark comments done", 403);
+    const projectAccess = user ? getProjectAccess(access.project.id, user.userId) : null;
+    const isAdmin = projectAccess?.kind === "admin";
+    const isOwner = user ? Boolean(canManageTrackMedia(user.userId, access.track.id)) : false;
+    if (!user || (!isAdmin && !isOwner)) {
+      return jsonError("Only the studio or track owner can mark comments done", 403);
     }
     const comment = updateCommentResolved(id, body.resolved);
     return Response.json({ comment });

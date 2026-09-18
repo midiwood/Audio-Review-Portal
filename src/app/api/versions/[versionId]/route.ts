@@ -33,7 +33,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ versi
   const isShare = body?.token === access.project.shareToken && shared;
 
   if (body?.status !== undefined) {
-    if (!isAdmin) return jsonError("Unauthorized", 401);
+    if (!isAdmin && !isComposer) return jsonError("Unauthorized", 401);
     if (!isVersionStatus(body.status)) return jsonError("Invalid status");
     const previous = access.version.status;
     if (body.status === "approved" && previous === "in_progress") {

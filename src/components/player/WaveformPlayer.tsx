@@ -23,6 +23,7 @@ type Props = {
   autoplay?: boolean;
   onPlaying?: (playing: boolean) => void;
   onDuration?: (seconds: number) => void;
+  onJumpToComment?: (seconds: number) => void;
 };
 
 type Slot = {
@@ -41,6 +42,7 @@ export function WaveformPlayer({
   autoplay = false,
   onPlaying,
   onDuration,
+  onJumpToComment,
 }: Props) {
   const paneRefs = useRef(new Map<string, HTMLDivElement>());
   const slotsRef = useRef(new Map<string, Slot>());
@@ -102,6 +104,7 @@ export function WaveformPlayer({
         cursorColor: "#f3f1ec",
         normalize: false,
         backend: "MediaElement",
+        interact: true,
         dragToSeek: true,
       });
       const slot: Slot = { ws, url: clip.url, ready: false };
@@ -249,8 +252,8 @@ export function WaveformPlayer({
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <div className="relative h-[112px] overflow-hidden rounded-lg bg-surface-2">
+      <div className="relative touch-none">
+        <div className="relative h-[112px] overflow-hidden rounded-lg bg-surface-2 touch-none">
           {clips.map((clip) => (
             <div
               key={clip.id}
@@ -258,7 +261,7 @@ export function WaveformPlayer({
                 if (node) paneRefs.current.set(clip.id, node);
                 else paneRefs.current.delete(clip.id);
               }}
-              className={`wave-wrap absolute inset-0 ${clip.id === activeId ? "z-10" : "pointer-events-none invisible"}`}
+              className={`wave-wrap absolute inset-0 touch-none ${clip.id === activeId ? "z-10" : "pointer-events-none invisible"}`}
             />
           ))}
         </div>
@@ -268,11 +271,25 @@ export function WaveformPlayer({
           </div>
         )}
         {ready && duration > 0 && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-1 z-20 h-2">
+          <div className="absolute inset-x-0 bottom-0 z-20 h-4">
             {(activeClip?.comments ?? []).map((comment) => (
-              <span
+              <button
                 key={comment.id}
-                className="absolute top-0 h-2 w-0.5 rounded-full bg-brass"
+                type="button"
+                title={comment.body.slice(0, 80) || "Jump to comment"}
+                aria-label={`Jump to comment at ${formatTime(comment.timestampSeconds)}`}
+                onClick={() => {
+                  const t = comment.timestampSeconds;
+                  const slot = slotsRef.current.get(activeId);
+                  if (slot?.ready) {
+                    slot.ws.setTime(t);
+                    setCurrent(t);
+                    playheadRef.current = t;
+                    onTimeRef.current(t);
+                  }
+                  onJumpToComment?.(t);
+                }}
+                className="absolute bottom-1 h-3 w-1.5 -translate-x-1/2 rounded-full bg-brass hover:brightness-125"
                 style={{ left: `${(comment.timestampSeconds / duration) * 100}%` }}
               />
             ))}

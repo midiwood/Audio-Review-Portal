@@ -9,8 +9,8 @@ export const STATUS_LABELS: Record<VersionStatus, string> = {
 
 export const STATUS_SHORT: Record<VersionStatus, string> = {
   in_progress: "Draft",
-  review_requested: "Review",
-  changes_requested: "Changes",
+  review_requested: "In review",
+  changes_requested: "Needs changes",
   approved: "Approved",
 };
 

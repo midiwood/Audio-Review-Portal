@@ -9,7 +9,8 @@ import { AddCommentFooter, CommentPanel } from "@/components/comments/CommentPan
 import { WaveformPlayer } from "@/components/player/WaveformPlayer";
 import { useTrackPlayback } from "@/components/player/useTrackPlayback";
 import { ReferenceList } from "@/components/references/ReferenceList";
-import { StatusBadge, StatusDropdown, STUDIO_STATUSES } from "@/components/StatusBadge";
+import { StatusBadge, StatusDropdown, STUDIO_STATUSES, OWNER_STATUSES } from "@/components/StatusBadge";
+import { NotificationBell } from "@/components/NotificationBell";
 import { TrackDropZone, type DroppedUploadItem } from "@/components/TrackDropZone";
 import { TrackEditMenu } from "@/components/TrackEditMenu";
 import { audioUrl } from "@/lib/audio-format";
@@ -107,7 +108,7 @@ export function ReviewWorkspace({
   const canAddVersion = isOwnTrack && !isApproved;
   const canEditReference = isOwnTrack;
   const canUploadDeliveries = isOwnTrack && !isReviewer;
-  const canAddTracks = isComposer || (isAdmin && composerFilter === project.ownerId);
+  const canAddTracks = isComposer || (isAdmin && (composerFilter === null || composerFilter === project.ownerId));
   const showingAllComposers = isAdmin && composerFilter === null;
   const filterPerson = useMemo(() => {
     if (!isAdmin || composerFilter == null) return null;
@@ -229,11 +230,12 @@ export function ReviewWorkspace({
     versions.find((v) => v.id === versionId) ??
     versions.find((v) => v.status === "approved") ??
     versions.at(-1);
-  const canComment = (isAdmin || isReviewer) && Boolean(version && version.status !== "in_progress");
+  const canComment = (isAdmin || isReviewer || isOwnTrack) && Boolean(version && version.status !== "in_progress");
   const canPublish = Boolean(isOwnTrack && version && version.status === "in_progress");
-  const canApproveVersion = Boolean(
-    isAdmin && version && version.status !== "in_progress" && version.status !== "approved",
+  const canSetStatus = Boolean(
+    (isAdmin || isOwnTrack) && version && version.status !== "in_progress",
   );
+  const statusOptions = isAdmin ? STUDIO_STATUSES : OWNER_STATUSES;
   const { clips, converting } = useTrackPlayback(track?.id, versions, shareToken, versionId);
   const playerClips = useMemo(
     () =>
@@ -445,7 +447,7 @@ export function ReviewWorkspace({
   }
 
   async function setStatus(status: VersionStatus) {
-    if (!version || !isAdmin) return;
+    if (!version || !canSetStatus) return;
     if (status === "approved") {
       const latest = versions.at(-1);
       if (latest && latest.id !== version.id) {
@@ -461,11 +463,6 @@ export function ReviewWorkspace({
       body: JSON.stringify({ status }),
     });
     if (res.ok) await reload();
-  }
-
-  async function approveAndRequestStems() {
-    if (!canApproveVersion || !version) return;
-    await setStatus("approved");
   }
 
   async function publishCurrentVersion() {
@@ -795,6 +792,21 @@ export function ReviewWorkspace({
               <h1 className="truncate text-base font-medium sm:text-lg">{project.name}</h1>
             )}
           </div>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => void copy("share")}
+              className="hidden shrink-0 rounded-md border border-line px-2.5 py-1.5 text-xs text-mute hover:border-brass hover:text-ink sm:inline-flex"
+              title="Copy client review link"
+            >
+              {copied === "share" ? "Review link copied" : "Copy review link"}
+            </button>
+          )}
+          {embedded && !isReviewer && (
+            <div className="shrink-0 min-[880px]:hidden">
+              <NotificationBell align="right" />
+            </div>
+          )}
           {isAdmin && (
             <div className="relative shrink-0" ref={projectMenuRef}>
               <button
@@ -1345,11 +1357,11 @@ export function ReviewWorkspace({
                         <path d="M12 3v10.2L8.4 9.6 7 11l5 5 5-5-1.4-1.4-3.6 3.6V3h-2Zm-7 16v2h14v-2H5Z" />
                       </svg>
                     </a>
-                    {isAdmin ? (
+                    {canSetStatus ? (
                       <StatusDropdown
                         status={version.status}
                         disabled={busy}
-                        options={STUDIO_STATUSES}
+                        options={statusOptions}
                         onChange={(status) => void setStatus(status)}
                       />
                     ) : version.status !== "in_progress" ? (
@@ -1396,34 +1408,17 @@ export function ReviewWorkspace({
                   onDuration={(d) => {
                     if (!version.durationSeconds) void persistDuration(d);
                   }}
+                  onJumpToComment={(seconds) => {
+                    setSeekTo(seconds);
+                    setSeekNonce(Date.now());
+                  }}
                 />
-
-                {canApproveVersion && (
-                  <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brass/50 bg-brass-dim/50 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-ink">
-                        Approve this version & request stems
-                      </p>
-                      <p className="text-xs text-mute">
-                        Locks v{version.versionNumber} as the delivery mix so the composer can upload finals and stems.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void approveAndRequestStems()}
-                      className="shrink-0 rounded-md bg-brass px-5 py-2.5 text-sm font-semibold text-bg hover:brightness-110 disabled:opacity-40"
-                    >
-                      Approve v{version.versionNumber} & request stems
-                    </button>
-                  </div>
-                )}
 
                 {isApproved && !isReviewer && (
                   <>
-                    {isComposer && isOwnTrack && approvedVersion && (
+                    {isOwnTrack && approvedVersion && (
                       <p className="text-sm text-mute">
-                        Studio approved v{approvedVersion.versionNumber} — upload finals & stems.
+                        Approved v{approvedVersion.versionNumber} — upload finals & stems below.
                       </p>
                     )}
                     <DeliveryPanel
@@ -1451,7 +1446,7 @@ export function ReviewWorkspace({
             </div>
           )}
           {canComment && version && (
-            <footer className="shrink-0 border-t border-line bg-surface/50 px-4 py-3 sm:px-5 sm:py-4">
+            <footer className="hidden shrink-0 border-t border-line bg-surface/50 px-4 py-3 sm:px-5 sm:py-4 min-[880px]:block">
               <AddCommentFooter
                 currentTime={playhead}
                 authorName={reviewerName}
@@ -1464,11 +1459,11 @@ export function ReviewWorkspace({
         </section>
 
         <aside
-          className={`min-h-0 flex-col gap-4 border-line bg-bg p-4 min-[880px]:flex min-[880px]:overflow-hidden min-[880px]:border-l ${
+          className={`min-h-0 flex-col border-line bg-bg min-[880px]:flex min-[880px]:overflow-hidden min-[880px]:border-l ${
             mobileSheet === "comments" ? "fixed inset-0 z-30 flex" : "hidden"
           }`}
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-line pb-3 min-[880px]:hidden">
+          <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3 min-[880px]:hidden">
             <p className="text-sm font-medium">Comments</p>
             <button
               type="button"
@@ -1479,30 +1474,43 @@ export function ReviewWorkspace({
             </button>
           </div>
           {version && canSeeComments && (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {canPublish ? (
-                <p className="mb-3 text-sm text-mute">Publish this draft to open studio review and comments.</p>
-              ) : null}
-              <CommentPanel
-                comments={version.comments}
-                currentTime={playhead}
-                authorName={reviewerName}
-                currentUserId={userId}
-                submitting={busy}
-                canReply={(canComment || isComposer) && version.status !== "in_progress"}
-                canResolve={isOwnTrack}
-                showResolved={isAdmin || isOwnTrack}
-                defaultShowChecked={isAdmin && !isOwnTrack}
-                onSubmit={addComment}
-                onEdit={editComment}
-                onDelete={deleteComment}
-                onResolve={isOwnTrack ? resolveComment : undefined}
-                onJump={(seconds) => {
-                  setSeekTo(seconds);
-                  setSeekNonce(Date.now());
-                  setMobileSheet(null);
-                }}
-              />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {canPublish ? (
+                  <p className="mb-3 text-sm text-mute">Publish this draft to open studio review and comments.</p>
+                ) : null}
+                <CommentPanel
+                  comments={version.comments}
+                  currentTime={playhead}
+                  authorName={reviewerName}
+                  currentUserId={userId}
+                  submitting={busy}
+                  canReply={canComment && version.status !== "in_progress"}
+                  canResolve={isOwnTrack || isAdmin}
+                  showResolved={isAdmin || isOwnTrack}
+                  defaultShowChecked={isAdmin && !isOwnTrack}
+                  onSubmit={addComment}
+                  onEdit={editComment}
+                  onDelete={deleteComment}
+                  onResolve={isOwnTrack || isAdmin ? resolveComment : undefined}
+                  onJump={(seconds) => {
+                    setSeekTo(seconds);
+                    setSeekNonce(Date.now());
+                    setMobileSheet(null);
+                  }}
+                />
+              </div>
+              {canComment && (
+                <div className="shrink-0 border-t border-line bg-surface/50 px-4 py-3 min-[880px]:hidden">
+                  <AddCommentFooter
+                    currentTime={playhead}
+                    authorName={reviewerName}
+                    onAuthorName={isReviewer ? setReviewerName : undefined}
+                    submitting={busy}
+                    onSubmit={(body) => addComment(body)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </aside>

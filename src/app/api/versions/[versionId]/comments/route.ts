@@ -31,7 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ versio
     if (!isAdmin && !isShare && !isComposer) return jsonError("Unauthorized", 401);
     const parent = getComment(parentId);
     if (!parent || parent.versionId !== versionId) return jsonError("Comment not found", 404);
-  } else if (!isAdmin && !isShare) {
+  } else if (!isAdmin && !isShare && !isComposer) {
     return jsonError("Unauthorized", 401);
   }
 
