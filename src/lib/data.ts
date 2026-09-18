@@ -18,6 +18,7 @@ import type {
   ComposerDto,
   DeliveryDto,
   DeliveryKind,
+  LibraryTrackDto,
   NotificationDto,
   NotificationType,
   PlanLabel,
@@ -583,6 +584,59 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
     }));
 
   return [...owned, ...shared].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Flat track list across owned + shared projects, with the same visibility rules as the workspace. */
+export function listTracksForUser(userId: string): LibraryTrackDto[] {
+  const projectList = listProjectsForUser(userId);
+  const rows: LibraryTrackDto[] = [];
+
+  for (const item of projectList) {
+    const access = getProjectAccess(item.id, userId);
+    if (!access) continue;
+    const project = getProjectById(item.id, {
+      kind: access.kind,
+      composerId: access.kind === "composer" ? userId : undefined,
+      includeComments: false,
+      includeInvite: false,
+    });
+    if (!project) continue;
+
+    for (const track of project.tracks) {
+      const preferred =
+        track.versions.find((version) => version.status === "approved") ?? track.versions.at(-1);
+      if (!preferred) continue;
+
+      const person =
+        (track.composerId && track.composerId === project.ownerId
+          ? project.owner
+          : project.composers.find((row) => row.id === track.composerId)) ??
+        (track.composerId === project.ownerId || !track.composerId ? project.owner : null);
+
+      rows.push({
+        id: track.id,
+        title: track.title,
+        projectId: project.id,
+        projectName: project.name,
+        ownership: item.ownership,
+        composerId: track.composerId,
+        composerName: track.composerName || person?.name || "Unknown",
+        composerAvatarUrl: person?.avatarUrl ?? null,
+        createdAt: track.createdAt,
+        unread: item.ownership === "owned" ? track.unread : false,
+        versionId: preferred.id,
+        versionNumber: preferred.versionNumber,
+        versionCount: track.versions.length,
+        status: preferred.status,
+        originalFilename: preferred.originalFilename,
+        durationSeconds: preferred.durationSeconds,
+        playbackReady: preferred.playbackReady,
+        href: `/projects/${project.id}?track=${track.id}`,
+      });
+    }
+  }
+
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function listUsersForAdmin() {

@@ -35,6 +35,7 @@ export function AppShell({
   const isWorkspace = /^\/projects\/[^/]+$/.test(pathname);
   const inSettings = pathname.startsWith("/settings");
   const inAccount = pathname.startsWith("/profile");
+  const inLibrary = pathname.startsWith("/library");
   const inProjectsNav = pathname === "/projects" || isWorkspace;
   const openNav = useCallback(() => setOpen(true), []);
 
@@ -58,9 +59,15 @@ export function AppShell({
       <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         <Link
           href="/projects"
-          className={`rounded-md px-3 py-2 text-sm font-medium ${navClass(inProjectsNav && !inSettings && !inAccount)}`}
+          className={`rounded-md px-3 py-2 text-sm font-medium ${navClass(inProjectsNav && !inSettings && !inAccount && !inLibrary)}`}
         >
           Projects
+        </Link>
+        <Link
+          href="/library"
+          className={`rounded-md px-3 py-2 text-sm font-medium ${navClass(inLibrary)}`}
+        >
+          Library
         </Link>
 
         {showSettings && (
