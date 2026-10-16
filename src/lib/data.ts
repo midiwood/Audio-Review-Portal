@@ -215,6 +215,11 @@ function toComposerDto(user: typeof users.$inferSelect): ComposerDto {
   };
 }
 
+/**
+ * People this studio can re-add: members of any project the owner runs
+ * (including trashed ones), minus anyone already on this project.
+ * First-time invites stay invite-link only — no global member directory.
+ */
 export function listInviteableComposers(projectId: string): ComposerDto[] {
   const db = getDb();
   const project = db.select().from(projects).where(eq(projects.id, projectId)).get();
@@ -227,11 +232,26 @@ export function listInviteableComposers(projectId: string): ComposerDto[] {
     .map((row) => row.userId);
   const exclude = [project.ownerId, ...members];
   const rows = db
-    .select()
-    .from(users)
-    .where(and(eq(users.role, "member"), isNull(users.deletedAt), notInArray(users.id, exclude)))
+    .select({ user: users })
+    .from(projectMembers)
+    .innerJoin(projects, eq(projects.id, projectMembers.projectId))
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(
+      and(
+        eq(projects.ownerId, project.ownerId),
+        eq(users.role, "member"),
+        isNull(users.deletedAt),
+        notInArray(users.id, exclude),
+      ),
+    )
+    .orderBy(users.name, users.email)
     .all();
-  return rows.map(toComposerDto);
+
+  const byId = new Map<string, ComposerDto>();
+  for (const row of rows) {
+    if (!byId.has(row.user.id)) byId.set(row.user.id, toComposerDto(row.user));
+  }
+  return [...byId.values()];
 }
 
 export function findComposerById(userId: string) {
