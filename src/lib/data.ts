@@ -23,6 +23,7 @@ import type {
   PlanLabel,
   ProjectDto,
   ProjectListItem,
+  LibraryTrackDto,
   ReferenceDto,
   TrackDto,
   UserRole,
@@ -195,6 +196,7 @@ export function listComposers(projectId: string): ComposerDto[] {
     .from(projectMembers)
     .innerJoin(users, eq(users.id, projectMembers.userId))
     .where(eq(projectMembers.projectId, projectId))
+    .orderBy(projectMembers.createdAt)
     .all();
   return rows.map((row) => ({
     id: row.user.id,
@@ -366,6 +368,7 @@ function assembleProject(
         composerId: track.composerId,
         composerName: composer?.name || composer?.email.split("@")[0] || "Studio",
         unread: trackVersions.some((version) => version.unread),
+        hasNewComment: false,
         createdAt: track.createdAt,
         versions: trackVersions,
         references: (referencesByTrack.get(track.id) ?? []).sort((a, b) => a.createdAt - b.createdAt),
@@ -573,6 +576,123 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
   return [...owned, ...shared].sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** Tracks the user can open — owned projects (studio-visible) plus their own composer tracks on shared projects. */
+export function listTracksForUser(userId: string): LibraryTrackDto[] {
+  const db = getDb();
+
+  const ownedRows = db
+    .select({
+      trackId: tracks.id,
+      title: tracks.title,
+      composerId: tracks.composerId,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectOwnerId: projects.ownerId,
+      trackCreatedAt: tracks.createdAt,
+      composerName: users.name,
+      composerEmail: users.email,
+      composerAvatarFilename: users.avatarFilename,
+    })
+    .from(tracks)
+    .innerJoin(projects, eq(tracks.projectId, projects.id))
+    .leftJoin(users, eq(tracks.composerId, users.id))
+    .where(and(eq(projects.ownerId, userId), isNull(projects.deletedAt), isNull(tracks.deletedAt), studioVisibleTrack))
+    .all();
+
+  const sharedRows = db
+    .select({
+      trackId: tracks.id,
+      title: tracks.title,
+      composerId: tracks.composerId,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectOwnerId: projects.ownerId,
+      trackCreatedAt: tracks.createdAt,
+      composerName: users.name,
+      composerEmail: users.email,
+      composerAvatarFilename: users.avatarFilename,
+    })
+    .from(tracks)
+    .innerJoin(projects, eq(tracks.projectId, projects.id))
+    .innerJoin(
+      projectMembers,
+      and(eq(projectMembers.projectId, projects.id), eq(projectMembers.userId, userId)),
+    )
+    .leftJoin(users, eq(tracks.composerId, users.id))
+    .where(
+      and(
+        isNull(projects.deletedAt),
+        isNull(tracks.deletedAt),
+        ne(projects.ownerId, userId),
+        eq(tracks.composerId, userId),
+      ),
+    )
+    .all();
+
+  const byId = new Map<string, (typeof ownedRows)[number]>();
+  for (const row of [...ownedRows, ...sharedRows]) {
+    byId.set(row.trackId, row);
+  }
+  const trackRows = [...byId.values()];
+  if (trackRows.length === 0) return [];
+
+  const trackIds = trackRows.map((row) => row.trackId);
+  const versionRows = db
+    .select()
+    .from(versions)
+    .where(inArray(versions.trackId, trackIds))
+    .all();
+
+  const versionsByTrack = new Map<string, (typeof versionRows)[number][]>();
+  for (const version of versionRows) {
+    const list = versionsByTrack.get(version.trackId) ?? [];
+    list.push(version);
+    versionsByTrack.set(version.trackId, list);
+  }
+
+  const ownerIds = [...new Set(trackRows.map((row) => row.projectOwnerId))];
+  const owners = db.select().from(users).where(inArray(users.id, ownerIds)).all();
+  const ownersById = new Map(owners.map((user) => [user.id, user]));
+
+  const result: LibraryTrackDto[] = [];
+  const createdAtByTrack = new Map(trackRows.map((row) => [row.trackId, row.trackCreatedAt]));
+  for (const row of trackRows) {
+    const list = (versionsByTrack.get(row.trackId) ?? []).slice().sort((a, b) => a.versionNumber - b.versionNumber);
+    if (list.length === 0) continue;
+    const preferred = list.find((version) => version.status === "approved") ?? list.at(-1)!;
+    const isStudioTrack = !row.composerId || row.composerId === row.projectOwnerId;
+    const owner = ownersById.get(row.projectOwnerId);
+    const composerName = isStudioTrack
+      ? owner?.name || owner?.email.split("@")[0] || "Studio"
+      : row.composerName || row.composerEmail?.split("@")[0] || "Composer";
+    const composerAvatarUrl = isStudioTrack
+      ? owner
+        ? avatarUrlFor(owner)
+        : null
+      : row.composerId
+        ? avatarUrlFor({ id: row.composerId, avatarFilename: row.composerAvatarFilename })
+        : null;
+
+    result.push({
+      id: row.trackId,
+      title: row.title,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      composerName,
+      composerAvatarUrl,
+      versionId: preferred.id,
+      versionNumber: preferred.versionNumber,
+      status: preferred.status as VersionStatus,
+      durationSeconds: preferred.durationSeconds,
+      originalFilename: preferred.originalFilename,
+      unread: list.some((version) => Boolean(version.unreadForAdmin)),
+      href: notificationHref(row.projectId, row.trackId),
+    });
+  }
+
+  return result.sort((a, b) => (createdAtByTrack.get(b.id) ?? 0) - (createdAtByTrack.get(a.id) ?? 0));
+}
+
 export function listUsersForAdmin() {
   return getDb()
     .select()
@@ -690,15 +810,19 @@ export function createProject(ownerId: string, name: string) {
 
 export function getProjectById(
   id: string,
-  options: { kind: AccessKind; composerId?: string; includeComments: boolean; includeInvite: boolean },
+  options: {
+    kind: AccessKind;
+    composerId?: string;
+    includeComments: boolean;
+    includeInvite: boolean;
+    viewerUserId?: string;
+  },
 ): ProjectDto | null {
   const project = getDb().select().from(projects).where(eq(projects.id, id)).get();
   if (!project || project.deletedAt != null) return null;
 
-  // Studio uploads should not sit in composer-style draft; promote any leftover owner drafts.
-  if (options.kind === "admin") {
-    promoteOwnerDraftVersions(project.id, project.ownerId);
-  }
+  // Studio uploads should not sit in composer-style draft; promote any leftover drafts.
+  promoteDraftVersions(project.id);
 
   const detail = loadProjectDetail(project, {
     composerId: options.kind === "composer" ? options.composerId : undefined,
@@ -708,52 +832,43 @@ export function getProjectById(
     includeArchived: true,
   });
 
-  // Project owner / reviewers only see submitted versions — drafts are private to the composer.
-  if (options.kind === "admin") {
-    return {
-      ...detail,
-      tracks: withoutDraftVersions(detail.tracks),
-      archivedTracks: withoutDraftVersions(detail.archivedTracks),
-    };
+  if (options.viewerUserId && detail) {
+    const alertIds = getUnreadCommentTrackIds(options.viewerUserId, id);
+    if (alertIds.size > 0) {
+      detail.tracks = detail.tracks.map((track) =>
+        alertIds.has(track.id) ? { ...track, hasNewComment: true } : track,
+      );
+      detail.archivedTracks = detail.archivedTracks.map((track) =>
+        alertIds.has(track.id) ? { ...track, hasNewComment: true } : track,
+      );
+    }
   }
+
   return detail;
 }
 
-function withoutDraftVersions(list: TrackDto[]): TrackDto[] {
-  return list
-    .map((track) => ({
-      ...track,
-      versions: track.versions.filter((version) => version.status !== "in_progress"),
-    }))
-    .filter((track) => track.versions.length > 0);
-}
-
-/** Owner/studio tracks skip the composer draft gate — mark leftover drafts as submitted. */
-export function promoteOwnerDraftVersions(projectId: string, ownerId: string) {
+/** Legacy drafts → in review (drafts are no longer used). */
+export function promoteDraftVersions(projectId: string) {
   const db = getDb();
-  const trackRows = db
-    .select({ id: tracks.id, composerId: tracks.composerId })
-    .from(tracks)
-    .where(eq(tracks.projectId, projectId))
-    .all()
-    .filter((row) => !row.composerId || row.composerId === ownerId);
+  const trackRows = db.select({ id: tracks.id }).from(tracks).where(eq(tracks.projectId, projectId)).all();
   if (trackRows.length === 0) return;
   const ids = trackRows.map((row) => row.id);
   db.update(versions)
-    .set({ status: "review_requested" })
+    .set({ status: "review_requested", unreadForAdmin: 1 })
     .where(and(inArray(versions.trackId, ids), eq(versions.status, "in_progress")))
     .run();
+}
+
+/** @deprecated Use promoteDraftVersions — kept for call sites that passed ownerId. */
+export function promoteOwnerDraftVersions(projectId: string, _ownerId: string) {
+  promoteDraftVersions(projectId);
 }
 
 export function getProjectByShareToken(token: string): ProjectDto | null {
   const project = getDb().select().from(projects).where(eq(projects.shareToken, token)).get();
   if (!project || project.deletedAt != null) return null;
-  const detail = loadProjectDetail(project, { includeComments: true, includeInvite: false, includeArchived: false });
-  // Reviewers only see published versions (not drafts awaiting audition/publish).
-  return {
-    ...detail,
-    tracks: withoutDraftVersions(detail.tracks),
-  };
+  promoteDraftVersions(project.id);
+  return loadProjectDetail(project, { includeComments: true, includeInvite: false, includeArchived: false });
 }
 
 export function updateProject(id: string, patch: { name?: string; notes?: string }) {
@@ -914,7 +1029,7 @@ export function createVersion(input: {
       id,
       trackId: input.trackId,
       versionNumber: nextVersionNumber(input.trackId),
-      status: input.status ?? "in_progress",
+      status: input.status ?? "review_requested",
       originalFilename: input.originalFilename,
       storedFilename: input.storedFilename,
       mimeType: input.mimeType,
@@ -1135,8 +1250,27 @@ export function countTrackVersions(trackId: string) {
 export function deleteVersion(versionId: string) {
   const row = getVersion(versionId);
   if (!row) return null;
+  const trackId = row.trackId;
   getDb().delete(versions).where(eq(versions.id, versionId)).run();
+  renumberTrackVersions(trackId);
   return row.storedFilename;
+}
+
+/** Keep version numbers contiguous (1…n) in creation order after deletes. */
+export function renumberTrackVersions(trackId: string) {
+  const rows = getDb()
+    .select({ id: versions.id })
+    .from(versions)
+    .where(eq(versions.trackId, trackId))
+    .orderBy(versions.createdAt, versions.versionNumber)
+    .all();
+  const db = getDb();
+  rows.forEach((row, index) => {
+    db.update(versions)
+      .set({ versionNumber: index + 1 })
+      .where(eq(versions.id, row.id))
+      .run();
+  });
 }
 
 export function archiveProject(projectId: string) {
@@ -1333,9 +1467,37 @@ export function countUnreadNotifications(userId: string) {
   const row = getDb()
     .select({ count: sql<number>`count(*)`.as("count") })
     .from(notifications)
-    .where(eq(notifications.userId, userId))
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
     .get();
   return Number(row?.count ?? 0);
+}
+
+export function getUnreadCommentTrackIds(userId: string, projectId: string) {
+  const rows = getDb()
+    .select({ trackId: notifications.trackId })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.projectId, projectId),
+        eq(notifications.type, "comment"),
+      ),
+    )
+    .all();
+  return new Set(rows.map((row) => row.trackId).filter((id): id is string => Boolean(id)));
+}
+
+export function markTrackCommentNotificationsRead(userId: string, trackId: string) {
+  getDb()
+    .delete(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.trackId, trackId),
+        eq(notifications.type, "comment"),
+      ),
+    )
+    .run();
 }
 
 export function markNotificationRead(userId: string, notificationId: string) {

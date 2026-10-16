@@ -28,12 +28,17 @@ export async function GET(request: Request, context: { params: Promise<{ version
 
   try {
     const download = url.searchParams.get("download") === "1";
-    const original = download || url.searchParams.get("original") === "1";
+    const original = url.searchParams.get("original") === "1";
+    const downloadName = download
+      ? original
+        ? access.version.originalFilename
+        : access.version.originalFilename.replace(/\.[^.]+$/, "") + ".mp3"
+      : undefined;
     return await redirectOrStreamStoredFile({
       storedFilename: access.version.storedFilename,
       mimeType: access.version.mimeType,
       original,
-      downloadName: download ? access.version.originalFilename : undefined,
+      downloadName,
       range: download ? null : request.headers.get("range"),
     });
   } catch (err) {

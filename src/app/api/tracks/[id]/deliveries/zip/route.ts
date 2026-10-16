@@ -33,7 +33,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const access = getTrackAccess(id);
   const allowed = access ? canAccessDeliveries(user.userId, id) : null;
-  if (!access || allowed?.kind !== "admin") return jsonError("Not found", 404);
+  if (!access || !allowed) return jsonError("Not found", 404);
 
   const rows = listDeliveriesForTrack(id);
   if (rows.length === 0) return jsonError("No finals or stems to download", 404);

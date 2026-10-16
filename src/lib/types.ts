@@ -3,6 +3,7 @@ export const VERSION_STATUSES = [
   "review_requested",
   "changes_requested",
   "approved",
+  "rejected",
 ] as const;
 
 export type VersionStatus = (typeof VERSION_STATUSES)[number];
@@ -70,6 +71,8 @@ export type TrackDto = {
   composerId: string | null;
   composerName: string;
   unread: boolean;
+  /** Unread comment notification for the current viewer. */
+  hasNewComment: boolean;
   createdAt: number;
   versions: VersionDto[];
   references: ReferenceDto[];
@@ -97,6 +100,23 @@ export type ProjectListItem = {
   trackCount: number;
   unreadCount: number;
   ownership: "owned" | "shared";
+};
+
+/** Flattened track row for the cross-project Library view. */
+export type LibraryTrackDto = {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  composerName: string;
+  composerAvatarUrl: string | null;
+  versionId: string;
+  versionNumber: number;
+  status: VersionStatus;
+  durationSeconds: number | null;
+  originalFilename: string;
+  unread: boolean;
+  href: string;
 };
 
 export type NotificationType = "comment" | "version" | "track" | "status";

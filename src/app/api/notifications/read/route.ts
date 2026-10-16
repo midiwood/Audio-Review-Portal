@@ -1,14 +1,27 @@
 import { getSessionUser } from "@/lib/auth";
-import { markAllNotificationsRead, markNotificationRead } from "@/lib/data";
+import {
+  markAllNotificationsRead,
+  markNotificationRead,
+  markTrackCommentNotificationsRead,
+} from "@/lib/data";
 import { jsonError } from "@/lib/http";
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) return jsonError("Unauthorized", 401);
 
-  const body = (await request.json().catch(() => null)) as { id?: string; all?: boolean } | null;
+  const body = (await request.json().catch(() => null)) as {
+    id?: string;
+    all?: boolean;
+    trackId?: string;
+  } | null;
   if (body?.all) {
     markAllNotificationsRead(user.userId);
+    return Response.json({ ok: true });
+  }
+  const trackId = body?.trackId?.trim();
+  if (trackId) {
+    markTrackCommentNotificationsRead(user.userId, trackId);
     return Response.json({ ok: true });
   }
   const id = body?.id?.trim();

@@ -72,7 +72,7 @@ function createTables(sqlite: SqliteDatabase) {
       id TEXT PRIMARY KEY,
       track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
       version_number INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'in_progress',
+      status TEXT NOT NULL DEFAULT 'review_requested',
       original_filename TEXT NOT NULL,
       stored_filename TEXT NOT NULL,
       mime_type TEXT NOT NULL,

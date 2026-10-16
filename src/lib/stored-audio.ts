@@ -63,7 +63,7 @@ export async function redirectOrStreamStoredFile(options: {
   downloadName?: string;
   range?: string | null;
 }) {
-  const original = Boolean(options.original || options.downloadName);
+  const original = Boolean(options.original);
   if (isSpacesConfigured()) {
     const key = await spacesPlayKey(options.storedFilename, original);
     if (key) {
@@ -85,7 +85,7 @@ export async function redirectOrStreamStoredFile(options: {
   }
 
   const playable = resolvePlayableAudio(options.storedFilename, options.mimeType, original);
-  const filePath = options.downloadName && original ? storedFilePath(options.storedFilename) : playable.filePath;
+  const filePath = original ? storedFilePath(options.storedFilename) : playable.filePath;
   if (!existsSync(filePath)) {
     throw new Error(
       `Audio file missing on disk (${options.storedFilename}). Spaces configured: ${isSpacesConfigured()}`,
@@ -93,11 +93,7 @@ export async function redirectOrStreamStoredFile(options: {
   }
   const stat = statSync(filePath);
   const fileSize = stat.size;
-  const mimeType = options.downloadName
-    ? options.mimeType || playable.mimeType
-    : original
-      ? options.mimeType || playable.mimeType
-      : playable.mimeType;
+  const mimeType = original ? options.mimeType || playable.mimeType : playable.mimeType;
   const extraHeaders: Record<string, string> = {};
   if (options.downloadName) extraHeaders["Content-Disposition"] = contentDisposition(options.downloadName);
   const range = options.downloadName ? null : options.range ?? null;

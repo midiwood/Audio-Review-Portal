@@ -26,7 +26,7 @@ function ProjectList({
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate font-medium text-ink group-hover:text-brass">{project.name}</span>
               {project.unreadCount > 0 && (
-                <span className="shrink-0 rounded-full bg-brass px-1.5 py-0.5 text-[10px] font-medium text-bg">
+                <span className="type-ui shrink-0 rounded-full bg-brass px-1.5 py-0.5 text-bg">
                   {project.unreadCount}
                 </span>
               )}
@@ -65,7 +65,7 @@ export default async function ProjectsPage() {
         <>
           <section className="space-y-1">
             {owned.length > 0 && (
-              <h2 className="text-xs font-medium tracking-wide text-mute uppercase">My projects</h2>
+              <h2 className="type-section">My projects</h2>
             )}
             {owned.length === 0 ? (
               canCreate ? null : (
@@ -80,7 +80,7 @@ export default async function ProjectsPage() {
 
           {shared.length > 0 && (
             <section className="space-y-1">
-              <h2 className="text-xs font-medium tracking-wide text-mute uppercase">Shared with me</h2>
+              <h2 className="type-section">Shared with me</h2>
               <ProjectList projects={shared} showDelete={false} />
             </section>
           )}

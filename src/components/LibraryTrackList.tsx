@@ -115,7 +115,7 @@ export function LibraryTrackList({ tracks }: { tracks: LibraryTrackDto[] }) {
                 )}
 
                 <Link href={track.href} className="min-w-0 flex-1 hover:text-brass">
-                  <p className="truncate text-sm font-medium text-ink group-hover:text-brass">{track.title}</p>
+                  <p className="truncate font-medium text-ink group-hover:text-brass">{track.title}</p>
                   <p className="truncate text-xs text-mute">
                     {track.composerName}
                     <span className="text-mute/50"> · </span>
@@ -130,7 +130,7 @@ export function LibraryTrackList({ tracks }: { tracks: LibraryTrackDto[] }) {
                   <StatusBadge status={track.status} compact />
                 </div>
 
-                <span className="w-10 shrink-0 text-right font-mono text-xs text-mute tabular-nums">
+                <span className="type-mono w-10 shrink-0 text-right text-mute">
                   {track.durationSeconds != null ? formatTime(track.durationSeconds) : "—"}
                 </span>
 

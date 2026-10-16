@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { formatTime } from "@/lib/format";
 import type { CommentDto } from "@/lib/types";
 
@@ -91,7 +91,7 @@ export function CommentComposer({
           type="button"
           disabled={disabled || !value.trim() || value.trim() === initialValue.trim()}
           onClick={() => void submit()}
-          className="flex-1 rounded-md bg-brass py-2 text-sm font-medium text-bg disabled:opacity-40"
+          className="type-ui flex-1 rounded-md bg-brass py-2 text-bg disabled:opacity-40"
         >
           {submitLabel}
         </button>
@@ -100,7 +100,7 @@ export function CommentComposer({
   );
 }
 
-/** Quiet sticky footer composer — playhead time + one input, not a second content card. */
+/** Sticky comment composer — compact playhead + input. */
 export function AddCommentFooter({
   currentTime,
   authorName,
@@ -108,6 +108,7 @@ export function AddCommentFooter({
   onSubmit,
   submitting,
   disabled,
+  textareaRef,
 }: {
   currentTime: number;
   authorName: string;
@@ -115,6 +116,7 @@ export function AddCommentFooter({
   onSubmit: (body: string) => Promise<void>;
   submitting?: boolean;
   disabled?: boolean;
+  textareaRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
   const [value, setValue] = useState("");
   const blocked = disabled || submitting || !authorName.trim();
@@ -127,23 +129,27 @@ export function AddCommentFooter({
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-1.5">
       {onAuthorName && (
         <input
           value={authorName}
           onChange={(e) => onAuthorName(e.target.value)}
           placeholder="Your name"
-          className="w-full rounded-md border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-brass"
+          className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-xs outline-none focus:border-brass"
         />
       )}
-      <div className="flex items-end gap-3">
-        <span className="mb-2.5 shrink-0 font-mono text-sm text-brass" title="Playhead">
-          {formatTime(currentTime)}
-        </span>
+      <div className="rounded-md border border-brass/30 bg-surface px-2.5 py-1.5 focus-within:border-brass">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="type-mono text-brass" title="Playhead">
+            {formatTime(currentTime)}
+          </span>
+          <span className="type-meta">Enter to post</span>
+        </div>
         <textarea
+          ref={textareaRef}
           rows={2}
           value={value}
-          placeholder="Add a comment…"
+          placeholder="Write a note at this time…"
           disabled={blocked}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
@@ -152,17 +158,18 @@ export function AddCommentFooter({
               void send();
             }
           }}
-          className="min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-md border border-line bg-surface px-3.5 py-2.5 text-sm outline-none focus:border-brass disabled:opacity-40"
+          className="min-h-[2.75rem] w-full resize-none border-0 bg-transparent text-sm leading-snug outline-none placeholder:text-mute/70 disabled:opacity-40"
         />
-        <button
-          type="button"
-          disabled={blocked || !value.trim()}
-          onClick={() => void send()}
-          className="shrink-0 rounded-md bg-brass px-3 py-2.5 text-sm font-medium text-bg disabled:opacity-40 sm:px-4"
-        >
-          <span className="sm:hidden">Post</span>
-          <span className="hidden sm:inline">Add comment</span>
-        </button>
+        <div className="mt-1 flex justify-end">
+          <button
+            type="button"
+            disabled={blocked || !value.trim()}
+            onClick={() => void send()}
+            className="type-ui rounded-md bg-brass px-2.5 py-1 text-bg hover:brightness-110 disabled:opacity-30"
+          >
+            Post
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -221,8 +228,8 @@ function CommentCard({
       >
         <div className="mb-1 flex items-start gap-2">
           <button type="button" onClick={() => onJump(comment.timestampSeconds)} className="min-w-0 flex-1 text-left">
-            <span className="font-mono text-xs text-brass">{formatTime(comment.timestampSeconds)}</span>
-            <span className="ml-2 text-xs text-mute">{comment.authorName}</span>
+            <span className="type-mono text-brass">{formatTime(comment.timestampSeconds)}</span>
+            <span className="type-meta ml-2">{comment.authorName}</span>
           </button>
           {canManage && !editing && (
             <div className="relative shrink-0" ref={menuRef}>
@@ -389,8 +396,8 @@ export function CommentPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-medium tracking-wide text-mute uppercase">Comments</h2>
-        <span className="font-mono text-xs text-brass">{formatTime(currentTime)}</span>
+        <h2 className="type-section">Comments</h2>
+        <span className="type-mono text-brass">{formatTime(currentTime)}</span>
       </div>
       {hasChecked && (
         <button

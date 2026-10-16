@@ -1,5 +1,12 @@
 import { getSessionUser } from "@/lib/auth";
-import { canManageTrackMedia, createTrack, createVersion, getProjectAccess, isTrackApproved } from "@/lib/data";
+import {
+  canManageTrackMedia,
+  createTrack,
+  createVersion,
+  getProjectAccess,
+  getTrack,
+  isTrackApproved,
+} from "@/lib/data";
 import { titleFromFilename } from "@/lib/format";
 import { jsonError } from "@/lib/http";
 import { markPlaybackReady, playbackSidecarName } from "@/lib/playback";
@@ -61,17 +68,33 @@ export async function POST(request: Request) {
     markPlaybackReady(storedFilename);
   }
 
-  // Project owner / studio: live in review immediately.
-  // Composer: draft until they publish for review.
-  const asDraft = access.kind !== "admin";
+  // Always live in review on upload (no draft step).
   const version = createVersion({
     trackId,
     originalFilename,
     storedFilename,
     mimeType,
-    status: asDraft ? "in_progress" : "review_requested",
-    unreadForAdmin: false,
+    status: "review_requested",
+    unreadForAdmin: access.kind !== "admin",
   });
+
+  if (access.kind !== "admin") {
+    const track = getTrack(trackId);
+    if (track) {
+      const { notifyUpload } = await import("@/lib/notify");
+      await notifyUpload({
+        projectId,
+        projectName: access.project.name,
+        ownerId: access.project.ownerId,
+        actorUserId: user.userId,
+        trackId,
+        trackTitle: track.title,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        isNewTrack: version.versionNumber <= 1,
+      });
+    }
+  }
 
   return Response.json({ version, trackId });
 }

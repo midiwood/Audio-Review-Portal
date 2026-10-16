@@ -4,6 +4,9 @@ import { useState } from "react";
 import { parseAppleMusicSong } from "@/lib/apple-music";
 import type { ReferenceDto } from "@/lib/types";
 
+/** Official compact Apple Music song embed height. */
+const EMBED_HEIGHT = 150;
+
 type Props = {
   references: ReferenceDto[];
   canEdit?: boolean;
@@ -11,111 +14,107 @@ type Props = {
   onRemove?: (id: string) => Promise<void>;
 };
 
+/** Compact Apple Music song embeds (smallest official player size). */
 export function ReferenceList({ references, canEdit, onAdd, onRemove }: Props) {
-  const [open, setOpen] = useState(references.length > 0);
-  const count = references.length;
+  const [adding, setAdding] = useState(false);
 
-  if (count === 0 && !canEdit) return null;
+  if (references.length === 0 && !canEdit) return null;
 
   return (
-    <section className="space-y-3">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-2 text-left"
-        aria-expanded={open}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current text-brass" aria-hidden>
-            <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6Z" />
-          </svg>
-          <span className="text-sm font-medium text-ink">
-            {count > 0 ? `Apple Music reference${count === 1 ? "" : "s"}` : "Apple Music reference"}
-          </span>
-          {count > 0 && (
-            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] tabular-nums text-mute">{count}</span>
-          )}
-        </span>
-        <span className="text-sm text-mute">{open ? "▾" : "▸"}</span>
-      </button>
-
-      {open && (
-        <div className="space-y-3">
-          {references.map((ref) => {
-            const song = parseAppleMusicSong(ref.url);
-            return (
-              <article key={ref.id} className="overflow-hidden rounded-lg border border-line bg-bg">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <p className="min-w-0 flex-1 truncate text-sm text-ink">{ref.title || song?.title || "Apple Music"}</p>
-                  <a
-                    href={song?.openUrl ?? ref.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 rounded-md p-1 text-brass hover:bg-surface-2"
-                    aria-label="Open in Apple Music"
-                    title="Open in Apple Music"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>
-                      <path d="M14 3h7v7h-2V6.4l-9.3 9.3-1.4-1.4L17.6 5H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
-                    </svg>
-                  </a>
-                  {canEdit && onRemove && (
-                    <button
-                      type="button"
-                      onClick={() => onRemove(ref.id)}
-                      className="shrink-0 rounded-md px-1.5 py-1 text-mute hover:text-rose-300"
-                      aria-label="Remove reference"
-                      title="Remove"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-                {song && (
-                  <iframe
-                    title={ref.title || song.title}
-                    allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
-                    frameBorder={0}
-                    height={152}
-                    className="w-full bg-transparent"
-                    sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"
-                    src={song.embedUrl}
-                  />
-                )}
-              </article>
-            );
-          })}
-          {canEdit && onAdd && (
-            <form
-              className="flex gap-1.5"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const data = new FormData(form);
-                const url = String(data.get("url") ?? "").trim();
-                if (!url) return;
-                await onAdd(url, "");
-                form.reset();
-                setOpen(true);
-              }}
-            >
-              <input
-                name="url"
-                placeholder="Paste Apple Music link…"
-                className="min-w-0 flex-1 rounded-md border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-brass"
+    <div className="space-y-1.5">
+      {references.map((ref) => {
+        const song = parseAppleMusicSong(ref.url);
+        const label = ref.title || song?.title || "Apple Music";
+        const href = song?.openUrl ?? ref.url;
+        return (
+          <div key={ref.id} className="group relative overflow-hidden rounded-md">
+            {song ? (
+              <iframe
+                title={label}
+                allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
+                frameBorder={0}
+                height={EMBED_HEIGHT}
+                className="w-full max-w-full bg-transparent"
+                style={{ overflow: "hidden", background: "transparent" }}
+                sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"
+                src={song.embedUrl}
               />
-              <button
-                type="submit"
-                className="shrink-0 rounded-md border border-line px-3 py-2 text-sm hover:border-brass"
-                aria-label="Add reference"
-                title="Add"
+            ) : (
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate rounded-md border border-line px-2 py-1.5 type-ui text-brass hover:underline"
               >
-                Add
-              </button>
-            </form>
-          )}
-        </div>
+                {label}
+              </a>
+            )}
+            <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded bg-bg/80 px-1.5 py-0.5 type-ui text-brass backdrop-blur-sm hover:text-ink"
+              >
+                Open
+              </a>
+              {canEdit && onRemove && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(ref.id)}
+                  className="rounded bg-bg/80 px-1 py-0.5 type-ui text-mute backdrop-blur-sm hover:text-rose-300"
+                  aria-label={`Remove ${label}`}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {canEdit && onAdd && (
+        adding ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const form = e.currentTarget;
+              const data = new FormData(form);
+              const url = String(data.get("url") ?? "").trim();
+              if (!url) return;
+              await onAdd(url, "");
+              form.reset();
+              setAdding(false);
+            }}
+          >
+            <input
+              name="url"
+              autoFocus
+              placeholder="Paste Apple Music link…"
+              className="min-w-0 flex-1 rounded border border-line bg-bg type-ui px-2 py-1 outline-none focus:border-brass"
+            />
+            <button type="submit" className="shrink-0 type-ui text-brass hover:underline">
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdding(false)}
+              className="type-ui shrink-0 text-mute hover:text-ink"
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="type-ui text-mute hover:text-brass"
+          >
+            + Apple Music ref
+          </button>
+        )
       )}
-    </section>
+    </div>
   );
 }

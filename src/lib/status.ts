@@ -5,6 +5,7 @@ export const STATUS_LABELS: Record<VersionStatus, string> = {
   review_requested: "Review Requested",
   changes_requested: "Changes Requested",
   approved: "Approved",
+  rejected: "Rejected",
 };
 
 export const STATUS_SHORT: Record<VersionStatus, string> = {
@@ -12,6 +13,7 @@ export const STATUS_SHORT: Record<VersionStatus, string> = {
   review_requested: "In review",
   changes_requested: "Needs changes",
   approved: "Approved",
+  rejected: "Rejected",
 };
 
 export function isVersionStatus(value: string): value is VersionStatus {

@@ -57,7 +57,7 @@ export const versions = sqliteTable("versions", {
     .notNull()
     .references(() => tracks.id, { onDelete: "cascade" }),
   versionNumber: integer("version_number").notNull(),
-  status: text("status").notNull().default("in_progress"),
+  status: text("status").notNull().default("review_requested"),
   originalFilename: text("original_filename").notNull(),
   storedFilename: text("stored_filename").notNull(),
   mimeType: text("mime_type").notNull(),

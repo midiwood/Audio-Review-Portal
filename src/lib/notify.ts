@@ -149,7 +149,7 @@ export async function notifyStatusChange(input: {
   status: VersionStatus;
   actorUserId: string;
 }) {
-  if (input.status !== "approved" && input.status !== "changes_requested") return;
+  if (input.status !== "approved" && input.status !== "changes_requested" && input.status !== "rejected") return;
   const composerId = input.composerId;
   if (!composerId || composerId === input.actorUserId) return;
 

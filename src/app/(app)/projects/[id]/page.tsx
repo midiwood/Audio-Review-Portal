@@ -20,6 +20,7 @@ export default async function ProjectPage({
     composerId: user.userId,
     includeComments: true,
     includeInvite: access.kind === "admin",
+    viewerUserId: user.userId,
   });
   if (!project) notFound();
 
