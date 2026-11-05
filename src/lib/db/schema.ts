@@ -6,7 +6,18 @@ export const users = sqliteTable("users", {
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull().default(""),
   role: text("role").notNull().default("member"),
+  /** Legacy flag — kept in sync with plan (subscriber / label / staff). */
   subscribed: integer("subscribed").notNull().default(0),
+  /** free | subscriber | label | staff */
+  plan: text("plan").notNull().default("free"),
+  /** For staff: the label account they belong to. */
+  labelId: text("label_id"),
+  /** For labels: invite token so staff can join the org. */
+  staffInviteToken: text("staff_invite_token").unique(),
+  /** Label org display name — separate from personal profile name. */
+  labelName: text("label_name"),
+  /** Label org logo file — separate from personal avatar. */
+  labelLogoFilename: text("label_logo_filename"),
   avatarFilename: text("avatar_filename"),
   createdAt: integer("created_at").notNull(),
   deletedAt: integer("deleted_at"),

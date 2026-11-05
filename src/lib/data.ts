@@ -14,6 +14,8 @@ import {
   versions,
 } from "@/lib/db/schema";
 import type {
+  AccountPlan,
+  AdminUserDto,
   CommentDto,
   ComposerDto,
   DeliveryDto,
@@ -59,9 +61,55 @@ function avatarUrlFor(user: { id: string; avatarFilename: string | null }) {
   return user.avatarFilename ? `/api/avatars/${user.id}?v=${encodeURIComponent(user.avatarFilename)}` : null;
 }
 
+function labelLogoUrlFor(user: { id: string; labelLogoFilename: string | null }) {
+  return user.labelLogoFilename
+    ? `/api/label-logos/${user.id}?v=${encodeURIComponent(user.labelLogoFilename)}`
+    : null;
+}
+
+/** Display name for a label org — falls back to personal name only if unset. */
+export function labelDisplayName(user: {
+  labelName: string | null;
+  name: string;
+  email: string;
+}) {
+  const label = user.labelName?.trim();
+  if (label) return label;
+  return user.name || user.email.split("@")[0] || "Label";
+}
+
+/** Label plan, or a superadmin acting as the owner of their own label. */
+export function accountHasLabelPrivileges(user: {
+  role: string | null | undefined;
+  plan: string | null | undefined;
+  subscribed?: number | boolean | null;
+}) {
+  return normalizeUserRole(user.role) === "superadmin" || normalizeAccountPlan(user.plan, user.subscribed) === "label";
+}
+
 export function normalizeUserRole(role: string | null | undefined): UserRole {
   if (role === "superadmin" || role === "admin") return "superadmin";
   return "member";
+}
+
+export function normalizeAccountPlan(
+  plan: string | null | undefined,
+  subscribed?: number | boolean | null,
+): AccountPlan {
+  if (plan === "subscriber" || plan === "label" || plan === "staff" || plan === "free") return plan;
+  return subscribed ? "subscriber" : "free";
+}
+
+function planToSubscribedFlag(plan: AccountPlan) {
+  return plan === "free" ? 0 : 1;
+}
+
+function planLabelFor(role: UserRole, plan: AccountPlan): PlanLabel {
+  if (role === "superadmin") return "Superadmin";
+  if (plan === "label") return "Label";
+  if (plan === "staff") return "Staff";
+  if (plan === "subscriber") return "Subscriber";
+  return "Free member";
 }
 
 export function createUser(input: {
@@ -70,10 +118,16 @@ export function createUser(input: {
   passwordHash: string;
   role?: UserRole;
   subscribed?: boolean;
+  plan?: AccountPlan;
+  labelId?: string | null;
   avatarFilename?: string | null;
 }) {
   const id = nanoid();
   const role = input.role ?? "member";
+  const plan: AccountPlan =
+    role === "superadmin"
+      ? "subscriber"
+      : input.plan ?? (input.subscribed ? "subscriber" : "free");
   getDb()
     .insert(users)
     .values({
@@ -82,7 +136,10 @@ export function createUser(input: {
       name: input.name.trim(),
       passwordHash: input.passwordHash,
       role,
-      subscribed: role === "superadmin" || input.subscribed ? 1 : 0,
+      plan,
+      subscribed: role === "superadmin" ? 1 : planToSubscribedFlag(plan),
+      labelId: plan === "staff" ? input.labelId ?? null : null,
+      staffInviteToken: plan === "label" || role === "superadmin" ? nanoid(21) : null,
       avatarFilename: input.avatarFilename ?? null,
       createdAt: Date.now(),
     })
@@ -98,6 +155,11 @@ export function updateUser(
     passwordHash?: string;
     avatarFilename?: string | null;
     subscribed?: boolean;
+    plan?: AccountPlan;
+    labelId?: string | null;
+    staffInviteToken?: string | null;
+    labelName?: string | null;
+    labelLogoFilename?: string | null;
   },
 ) {
   const updates: Partial<typeof users.$inferInsert> = {};
@@ -105,7 +167,17 @@ export function updateUser(
   if (patch.email !== undefined) updates.email = patch.email.trim().toLowerCase();
   if (patch.passwordHash !== undefined) updates.passwordHash = patch.passwordHash;
   if (patch.avatarFilename !== undefined) updates.avatarFilename = patch.avatarFilename;
-  if (patch.subscribed !== undefined) updates.subscribed = patch.subscribed ? 1 : 0;
+  if (patch.plan !== undefined) {
+    updates.plan = patch.plan;
+    updates.subscribed = planToSubscribedFlag(patch.plan);
+  } else if (patch.subscribed !== undefined) {
+    updates.subscribed = patch.subscribed ? 1 : 0;
+    updates.plan = patch.subscribed ? "subscriber" : "free";
+  }
+  if (patch.labelId !== undefined) updates.labelId = patch.labelId;
+  if (patch.staffInviteToken !== undefined) updates.staffInviteToken = patch.staffInviteToken;
+  if (patch.labelName !== undefined) updates.labelName = patch.labelName;
+  if (patch.labelLogoFilename !== undefined) updates.labelLogoFilename = patch.labelLogoFilename;
   if (Object.keys(updates).length) {
     getDb().update(users).set(updates).where(eq(users.id, id)).run();
   }
@@ -114,17 +186,22 @@ export function updateUser(
 
 export function toProfileDto(user: typeof users.$inferSelect) {
   const role = normalizeUserRole(user.role);
-  const subscribed = Boolean(user.subscribed) || role === "superadmin";
-  const planLabel: PlanLabel =
-    role === "superadmin" ? "Superadmin" : subscribed ? "Subscriber" : "Free member";
+  const plan = role === "superadmin" ? ("subscriber" as const) : normalizeAccountPlan(user.plan, user.subscribed);
+  const subscribed = plan !== "free" || role === "superadmin";
+  const isLabel = accountHasLabelPrivileges(user);
   return {
     id: user.id,
     name: user.name || user.email.split("@")[0],
     email: user.email,
     role,
+    plan,
+    labelId: plan === "staff" ? user.labelId ?? null : null,
     subscribed,
-    planLabel,
+    planLabel: planLabelFor(role, plan),
     avatarUrl: avatarUrlFor(user),
+    staffInviteToken: isLabel ? user.staffInviteToken ?? null : null,
+    labelName: isLabel ? user.labelName?.trim() || null : null,
+    labelLogoUrl: isLabel ? labelLogoUrlFor(user) : null,
   };
 }
 
@@ -147,11 +224,27 @@ export function isTrackSharedWithStudio(
   return memberIds.has(track.composerId);
 }
 
+/** True when userId is staff of the given label account. */
+export function userIsStaffOfLabel(userId: string, labelId: string) {
+  const user = findUserById(userId);
+  if (!user) return false;
+  const plan = normalizeAccountPlan(user.plan, user.subscribed);
+  return plan === "staff" && user.labelId === labelId;
+}
+
+export function userIsSuperadmin(userId: string) {
+  const user = findUserById(userId);
+  return Boolean(user && normalizeUserRole(user.role) === "superadmin");
+}
+
 export function getProjectAccess(projectId: string, userId: string): ProjectAccess | null {
   const db = getDb();
   const project = db.select().from(projects).where(eq(projects.id, projectId)).get();
   if (!project || project.deletedAt != null) return null;
+  // Superadmin has admin on every project.
+  if (userIsSuperadmin(userId)) return { kind: "admin", project };
   if (project.ownerId === userId) return { kind: "admin", project };
+  if (userIsStaffOfLabel(userId, project.ownerId)) return { kind: "admin", project };
   const member = db
     .select()
     .from(projectMembers)
@@ -207,12 +300,37 @@ export function listComposers(projectId: string): ComposerDto[] {
 }
 
 function toComposerDto(user: typeof users.$inferSelect): ComposerDto {
+  if (accountHasLabelPrivileges(user)) {
+    return {
+      id: user.id,
+      name: labelDisplayName(user),
+      email: user.email,
+      avatarUrl: labelLogoUrlFor(user) ?? avatarUrlFor(user),
+    };
+  }
   return {
     id: user.id,
     name: user.name || user.email.split("@")[0],
     email: user.email,
     avatarUrl: avatarUrlFor(user),
   };
+}
+
+export function updateLabelBranding(
+  labelId: string,
+  patch: { labelName?: string; labelLogoFilename?: string | null },
+) {
+  const user = findUserById(labelId);
+  if (!user || !accountHasLabelPrivileges(user)) return null;
+  const updates: { labelName?: string | null; labelLogoFilename?: string | null } = {};
+  if (patch.labelName !== undefined) {
+    const next = patch.labelName.trim();
+    updates.labelName = next || null;
+  }
+  if (patch.labelLogoFilename !== undefined) {
+    updates.labelLogoFilename = patch.labelLogoFilename;
+  }
+  return toProfileDto(updateUser(labelId, updates));
 }
 
 /**
@@ -240,6 +358,7 @@ export function listInviteableComposers(projectId: string): ComposerDto[] {
       and(
         eq(projects.ownerId, project.ownerId),
         eq(users.role, "member"),
+        eq(users.plan, "free"),
         isNull(users.deletedAt),
         notInArray(users.id, exclude),
       ),
@@ -381,12 +500,13 @@ function assembleProject(
     .map((track) => {
       const composer = track.composerId ? usersById.get(track.composerId) : undefined;
       const trackVersions = versionsByTrack.get(track.id) ?? [];
+      const composerDto = composer ? toComposerDto(composer) : null;
       return {
         id: track.id,
         projectId: track.projectId,
         title: track.title,
         composerId: track.composerId,
-        composerName: composer?.name || composer?.email.split("@")[0] || "Studio",
+        composerName: composerDto?.name || "Studio",
         unread: trackVersions.some((version) => version.unread),
         hasNewComment: false,
         createdAt: track.createdAt,
@@ -533,19 +653,45 @@ const studioVisibleTrack = sql`(
 
 export function listProjectsForUser(userId: string): ProjectListItem[] {
   const db = getDb();
+  const me = findUserById(userId);
+  const myPlan = me ? normalizeAccountPlan(me.plan, me.subscribed) : "free";
+  const staffLabelId = myPlan === "staff" ? me?.labelId ?? null : null;
+  const asSuperadmin = userIsSuperadmin(userId);
+
+  const projectListSelect = {
+    id: projects.id,
+    name: projects.name,
+    createdAt: projects.createdAt,
+    trackCount: sql<number>`count(distinct case when ${tracks.id} is not null and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
+      "track_count",
+    ),
+    unreadCount: sql<number>`count(distinct case when ${versions.unreadForAdmin} = 1 and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
+      "unread_count",
+    ),
+  };
+
+  if (asSuperadmin) {
+    return db
+      .select(projectListSelect)
+      .from(projects)
+      .leftJoin(tracks, eq(tracks.projectId, projects.id))
+      .leftJoin(versions, eq(versions.trackId, tracks.id))
+      .where(isNull(projects.deletedAt))
+      .groupBy(projects.id)
+      .orderBy(desc(projects.createdAt))
+      .all()
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+        trackCount: Number(row.trackCount),
+        unreadCount: Number(row.unreadCount),
+        ownership: "owned" as const,
+      }));
+  }
 
   const owned = db
-    .select({
-      id: projects.id,
-      name: projects.name,
-      createdAt: projects.createdAt,
-      trackCount: sql<number>`count(distinct case when ${tracks.id} is not null and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
-        "track_count",
-      ),
-      unreadCount: sql<number>`count(distinct case when ${versions.unreadForAdmin} = 1 and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
-        "unread_count",
-      ),
-    })
+    .select(projectListSelect)
     .from(projects)
     .leftJoin(tracks, eq(tracks.projectId, projects.id))
     .leftJoin(versions, eq(versions.trackId, tracks.id))
@@ -561,6 +707,40 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
       unreadCount: Number(row.unreadCount),
       ownership: "owned" as const,
     }));
+
+  const labelFeed =
+    staffLabelId == null
+      ? []
+      : db
+          .select({
+            id: projects.id,
+            name: projects.name,
+            createdAt: projects.createdAt,
+            trackCount: sql<number>`count(distinct case when ${tracks.id} is not null and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
+              "track_count",
+            ),
+            unreadCount: sql<number>`count(distinct case when ${versions.unreadForAdmin} = 1 and ${tracks.deletedAt} is null and ${studioVisibleTrack} then ${tracks.id} end)`.as(
+              "unread_count",
+            ),
+          })
+          .from(projects)
+          .leftJoin(tracks, eq(tracks.projectId, projects.id))
+          .leftJoin(versions, eq(versions.trackId, tracks.id))
+          .where(and(eq(projects.ownerId, staffLabelId), isNull(projects.deletedAt)))
+          .groupBy(projects.id)
+          .orderBy(desc(projects.createdAt))
+          .all()
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            createdAt: row.createdAt,
+            trackCount: Number(row.trackCount),
+            unreadCount: Number(row.unreadCount),
+            ownership: "label" as const,
+          }));
+
+  const ownedIds = new Set(owned.map((p) => p.id));
+  const labelIds = new Set(labelFeed.map((p) => p.id));
 
   const shared = db
     .select({
@@ -584,6 +764,7 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
     .groupBy(projects.id)
     .orderBy(desc(projects.createdAt))
     .all()
+    .filter((row) => !ownedIds.has(row.id) && !labelIds.has(row.id))
     .map((row) => ({
       id: row.id,
       name: row.name,
@@ -593,12 +774,17 @@ export function listProjectsForUser(userId: string): ProjectListItem[] {
       ownership: "shared" as const,
     }));
 
-  return [...owned, ...shared].sort((a, b) => b.createdAt - a.createdAt);
+  return [...owned, ...labelFeed, ...shared].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** Tracks the user can open — owned projects (studio-visible) plus their own composer tracks on shared projects. */
 export function listTracksForUser(userId: string): LibraryTrackDto[] {
   const db = getDb();
+  const me = findUserById(userId);
+  const myPlan = me ? normalizeAccountPlan(me.plan, me.subscribed) : "free";
+  const asSuperadmin = userIsSuperadmin(userId);
+  const feedOwnerIds =
+    myPlan === "staff" && me?.labelId ? [userId, me.labelId] : [userId];
 
   const ownedRows = db
     .select({
@@ -616,7 +802,14 @@ export function listTracksForUser(userId: string): LibraryTrackDto[] {
     .from(tracks)
     .innerJoin(projects, eq(tracks.projectId, projects.id))
     .leftJoin(users, eq(tracks.composerId, users.id))
-    .where(and(eq(projects.ownerId, userId), isNull(projects.deletedAt), isNull(tracks.deletedAt), studioVisibleTrack))
+    .where(
+      and(
+        asSuperadmin ? sql`1=1` : inArray(projects.ownerId, feedOwnerIds),
+        isNull(projects.deletedAt),
+        isNull(tracks.deletedAt),
+        studioVisibleTrack,
+      ),
+    )
     .all();
 
   const sharedRows = db
@@ -682,12 +875,19 @@ export function listTracksForUser(userId: string): LibraryTrackDto[] {
     const preferred = list.find((version) => version.status === "approved") ?? list.at(-1)!;
     const isStudioTrack = !row.composerId || row.composerId === row.projectOwnerId;
     const owner = ownersById.get(row.projectOwnerId);
+    const ownerIsLabel = owner ? accountHasLabelPrivileges(owner) : false;
     const composerName = isStudioTrack
-      ? owner?.name || owner?.email.split("@")[0] || "Studio"
+      ? owner
+        ? ownerIsLabel
+          ? labelDisplayName(owner)
+          : owner.name || owner.email.split("@")[0] || "Studio"
+        : "Studio"
       : row.composerName || row.composerEmail?.split("@")[0] || "Composer";
     const composerAvatarUrl = isStudioTrack
       ? owner
-        ? avatarUrlFor(owner)
+        ? ownerIsLabel
+          ? labelLogoUrlFor(owner) ?? avatarUrlFor(owner)
+          : avatarUrlFor(owner)
         : null
       : row.composerId
         ? avatarUrlFor({ id: row.composerId, avatarFilename: row.composerAvatarFilename })
@@ -714,35 +914,217 @@ export function listTracksForUser(userId: string): LibraryTrackDto[] {
 }
 
 export function listUsersForAdmin() {
-  return getDb()
-    .select()
-    .from(users)
-    .where(isNull(users.deletedAt))
-    .orderBy(desc(users.createdAt))
-    .all()
-    .map((user) => toProfileDto(user));
+  return listUsersDashboardForAdmin().filter((u) => !u.deletedAt);
 }
 
 export function listDeletedUsersForAdmin() {
-  return getDb()
-    .select()
+  return listUsersDashboardForAdmin().filter((u): u is AdminUserDto & { deletedAt: number } => u.deletedAt != null);
+}
+
+/** Full user directory for the superadmin dashboard (active + deleted). */
+export function listUsersDashboardForAdmin(): AdminUserDto[] {
+  const db = getDb();
+  const allUsers = db.select().from(users).orderBy(desc(users.createdAt)).all();
+
+  const ownedCounts = db
+    .select({
+      ownerId: projects.ownerId,
+      count: sql<number>`count(*)`.as("count"),
+    })
+    .from(projects)
+    .where(isNull(projects.deletedAt))
+    .groupBy(projects.ownerId)
+    .all();
+  const ownedByUser = new Map(ownedCounts.map((row) => [row.ownerId, Number(row.count)]));
+
+  const memberCounts = db
+    .select({
+      userId: projectMembers.userId,
+      count: sql<number>`count(*)`.as("count"),
+    })
+    .from(projectMembers)
+    .innerJoin(projects, eq(projects.id, projectMembers.projectId))
+    .where(isNull(projects.deletedAt))
+    .groupBy(projectMembers.userId)
+    .all();
+  const memberByUser = new Map(memberCounts.map((row) => [row.userId, Number(row.count)]));
+
+  const staffCounts = db
+    .select({
+      labelId: users.labelId,
+      count: sql<number>`count(*)`.as("count"),
+    })
     .from(users)
-    .where(isNotNull(users.deletedAt))
-    .orderBy(desc(users.deletedAt))
-    .all()
-    .map((user) => ({
-      ...toProfileDto(user),
-      deletedAt: user.deletedAt as number,
-    }));
+    .where(and(eq(users.plan, "staff"), isNull(users.deletedAt), isNotNull(users.labelId)))
+    .groupBy(users.labelId)
+    .all();
+  const staffByLabel = new Map(
+    staffCounts.filter((row) => row.labelId).map((row) => [row.labelId as string, Number(row.count)]),
+  );
+
+  const labelsById = new Map(
+    allUsers.filter((u) => accountHasLabelPrivileges(u)).map((u) => [u.id, u]),
+  );
+
+  return allUsers.map((user) => {
+    const profile = toProfileDto(user);
+    const plan = profile.plan;
+    const labelAccount = plan === "staff" && user.labelId ? labelsById.get(user.labelId) : undefined;
+    return {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      role: profile.role,
+      plan,
+      subscribed: profile.subscribed,
+      planLabel: profile.planLabel,
+      avatarUrl: profile.avatarUrl,
+      createdAt: user.createdAt,
+      ownedProjectCount: ownedByUser.get(user.id) ?? 0,
+      memberProjectCount: memberByUser.get(user.id) ?? 0,
+      staffCount:
+        plan === "label" || profile.role === "superadmin" ? staffByLabel.get(user.id) ?? 0 : 0,
+      labelName: plan === "label" || profile.role === "superadmin" ? profile.labelName : null,
+      labelLogoUrl: plan === "label" || profile.role === "superadmin" ? profile.labelLogoUrl : null,
+      labelAccountId: plan === "staff" ? user.labelId ?? null : null,
+      labelAccountName: labelAccount ? labelDisplayName(labelAccount) : null,
+      deletedAt: user.deletedAt ?? undefined,
+    };
+  });
 }
 
 export function setUserSubscribed(userId: string, subscribed: boolean) {
+  return setUserPlan(userId, subscribed ? "subscriber" : "free");
+}
+
+/** Superadmin assigns Free / Subscriber / Label. Staff is only via label invite. */
+export function setUserPlan(userId: string, plan: "free" | "subscriber" | "label") {
   const user = findUserById(userId);
   if (!user) return null;
   if (normalizeUserRole(user.role) === "superadmin") {
-    return toProfileDto(updateUser(userId, { subscribed: true }));
+    return toProfileDto(user);
   }
-  return toProfileDto(updateUser(userId, { subscribed }));
+
+  const previous = normalizeAccountPlan(user.plan, user.subscribed);
+  if (previous === "label" && plan !== "label") {
+    clearStaffForLabel(userId);
+  }
+
+  const patch: Parameters<typeof updateUser>[1] = {
+    plan,
+    labelId: null,
+  };
+  if (plan === "label") {
+    patch.staffInviteToken = user.staffInviteToken || nanoid(21);
+  } else {
+    patch.staffInviteToken = null;
+  }
+  return toProfileDto(updateUser(userId, patch));
+}
+
+function clearStaffForLabel(labelId: string) {
+  getDb()
+    .update(users)
+    .set({ plan: "free", subscribed: 0, labelId: null })
+    .where(and(eq(users.labelId, labelId), eq(users.plan, "staff"), isNull(users.deletedAt)))
+    .run();
+}
+
+/** Mints a staff invite token for a label or superadmin that does not have one yet. */
+export function ensureStaffInviteToken(userId: string) {
+  const user = findUserById(userId);
+  if (!user || !accountHasLabelPrivileges(user)) return null;
+  if (user.staffInviteToken) return user.staffInviteToken;
+  const token = nanoid(21);
+  updateUser(userId, { staffInviteToken: token });
+  return token;
+}
+
+export function getLabelByStaffInviteToken(token: string) {
+  const label = getDb()
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.staffInviteToken, token),
+        isNull(users.deletedAt),
+        or(eq(users.plan, "label"), eq(users.role, "superadmin")),
+      ),
+    )
+    .get();
+  return label ?? null;
+}
+
+export function listStaffForLabel(labelId: string): ComposerDto[] {
+  return getDb()
+    .select()
+    .from(users)
+    .where(and(eq(users.labelId, labelId), eq(users.plan, "staff"), isNull(users.deletedAt)))
+    .orderBy(users.name, users.email)
+    .all()
+    .map(toComposerDto);
+}
+
+export function listInviteableStaff(labelId: string): ComposerDto[] {
+  const staffIds = listStaffForLabel(labelId).map((s) => s.id);
+  const exclude = [labelId, ...staffIds];
+  // People who were previously staff of this label aren't tracked after removal —
+  // only free members already known via the label's project composer circle.
+  // For staff, "add existing" = free members who joined any label project as composers.
+  const rows = getDb()
+    .select({ user: users })
+    .from(projectMembers)
+    .innerJoin(projects, eq(projects.id, projectMembers.projectId))
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(
+      and(
+        eq(projects.ownerId, labelId),
+        eq(users.role, "member"),
+        eq(users.plan, "free"),
+        isNull(users.deletedAt),
+        notInArray(users.id, exclude),
+      ),
+    )
+    .all();
+  const byId = new Map<string, ComposerDto>();
+  for (const row of rows) {
+    if (!byId.has(row.user.id)) byId.set(row.user.id, toComposerDto(row.user));
+  }
+  return [...byId.values()];
+}
+
+export function addStaffToLabel(labelId: string, userId: string): { ok: true } | { ok: false; error: string } {
+  const label = findUserById(labelId);
+  if (!label || !accountHasLabelPrivileges(label)) {
+    return { ok: false, error: "Not a label account" };
+  }
+  const user = findUserById(userId);
+  if (!user) return { ok: false, error: "User not found" };
+  if (normalizeUserRole(user.role) === "superadmin") {
+    return { ok: false, error: "Cannot add that account as staff" };
+  }
+  const plan = normalizeAccountPlan(user.plan, user.subscribed);
+  if (plan === "label" || plan === "subscriber") {
+    return { ok: false, error: "That account already has its own plan" };
+  }
+  if (plan === "staff" && user.labelId && user.labelId !== labelId) {
+    return { ok: false, error: "That person is staff of another label" };
+  }
+  updateUser(userId, { plan: "staff", labelId, subscribed: true });
+  return { ok: true };
+}
+
+export function removeStaffFromLabel(labelId: string, userId: string) {
+  const user = findUserById(userId);
+  if (!user || user.labelId !== labelId || normalizeAccountPlan(user.plan, user.subscribed) !== "staff") {
+    return false;
+  }
+  updateUser(userId, { plan: "free", labelId: null, subscribed: false });
+  return true;
+}
+
+export function joinAsLabelStaff(labelId: string, userId: string): { ok: true } | { ok: false; error: string } {
+  return addStaffToLabel(labelId, userId);
 }
 
 export function softDeleteUser(userId: string, actorId: string): { ok: true } | { ok: false; error: string } {
@@ -752,6 +1134,10 @@ export function softDeleteUser(userId: string, actorId: string): { ok: true } | 
   if (!row || row.deletedAt != null) return { ok: false, error: "Not found" };
   if (normalizeUserRole(row.role) === "superadmin") {
     return { ok: false, error: "Superadmin accounts cannot be deleted" };
+  }
+
+  if (normalizeAccountPlan(row.plan, row.subscribed) === "label") {
+    clearStaffForLabel(userId);
   }
 
   const now = Date.now();
@@ -784,6 +1170,7 @@ export function restoreUser(userId: string): { ok: true; user: ReturnType<typeof
 }
 
 export function listArchivedProjectsForOwner(ownerId: string): ProjectListItem[] {
+  const asSuperadmin = userIsSuperadmin(ownerId);
   const rows = getDb()
     .select({
       id: projects.id,
@@ -796,7 +1183,12 @@ export function listArchivedProjectsForOwner(ownerId: string): ProjectListItem[]
     })
     .from(projects)
     .leftJoin(tracks, eq(tracks.projectId, projects.id))
-    .where(and(eq(projects.ownerId, ownerId), isNotNull(projects.deletedAt)))
+    .where(
+      and(
+        asSuperadmin ? sql`1=1` : eq(projects.ownerId, ownerId),
+        isNotNull(projects.deletedAt),
+      ),
+    )
     .groupBy(projects.id)
     .orderBy(desc(projects.deletedAt))
     .all();
@@ -951,8 +1343,12 @@ export function isTrackOwner(
 export function canOwnTrack(userId: string, trackId: string, options?: { includeArchived?: boolean }) {
   const access = getTrackAccess(trackId, options);
   if (!access) return null;
-  if (!isTrackOwner(userId, access.track, access.project)) return null;
-  return access;
+  if (userIsSuperadmin(userId)) return access;
+  if (isTrackOwner(userId, access.track, access.project)) return access;
+  const isStudioTrack =
+    !access.track.composerId || access.track.composerId === access.project.ownerId;
+  if (isStudioTrack && userIsStaffOfLabel(userId, access.project.ownerId)) return access;
+  return null;
 }
 
 /** Only the track owner (composer, or admin on studio-owned tracks). */
@@ -969,9 +1365,12 @@ export function canManageTrackMedia(
   const access = getTrackAccess(trackId, options);
   if (!access) return null;
   if (!options?.includeArchived && access.track.deletedAt != null) return null;
+  if (userIsSuperadmin(userId)) return { ...access, kind: "admin" as const };
   const mediaOwner = access.track.composerId ?? access.project.ownerId;
-  if (mediaOwner !== userId) return null;
-  if (access.project.ownerId === userId) return { ...access, kind: "admin" as const };
+  const isStudioTrack = !access.track.composerId || access.track.composerId === access.project.ownerId;
+  const isLabelStaffAdmin = isStudioTrack && userIsStaffOfLabel(userId, access.project.ownerId);
+  if (mediaOwner !== userId && !isLabelStaffAdmin) return null;
+  if (access.project.ownerId === userId || isLabelStaffAdmin) return { ...access, kind: "admin" as const };
   const member = getProjectAccess(access.project.id, userId);
   if (member?.kind === "composer") return { ...access, kind: "composer" as const };
   return null;
@@ -1414,14 +1813,13 @@ export function deleteReference(id: string) {
   return row;
 }
 
-export function projectOwnedBy(projectId: string, ownerId: string) {
-  return (
-    getDb()
-      .select()
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)))
-      .get() ?? null
-  );
+export function projectOwnedBy(projectId: string, userId: string) {
+  const project = getDb().select().from(projects).where(eq(projects.id, projectId)).get() ?? null;
+  if (!project) return null;
+  if (userIsSuperadmin(userId)) return project;
+  if (project.ownerId === userId) return project;
+  if (userIsStaffOfLabel(userId, project.ownerId)) return project;
+  return null;
 }
 
 function notificationHref(projectId: string, trackId?: string | null) {

@@ -37,6 +37,11 @@ function createTables(sqlite: SqliteDatabase) {
       name TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL DEFAULT 'member',
       subscribed INTEGER NOT NULL DEFAULT 0,
+      plan TEXT NOT NULL DEFAULT 'free',
+      label_id TEXT,
+      staff_invite_token TEXT UNIQUE,
+      label_name TEXT,
+      label_logo_filename TEXT,
       avatar_filename TEXT,
       created_at INTEGER NOT NULL,
       deleted_at INTEGER
@@ -172,10 +177,21 @@ function migrateSchema(sqlite: SqliteDatabase) {
     changed = ensureColumn(sqlite, "users", "name", "TEXT NOT NULL DEFAULT ''") || changed;
     changed = ensureColumn(sqlite, "users", "role", "TEXT NOT NULL DEFAULT 'member'") || changed;
     changed = ensureColumn(sqlite, "users", "subscribed", "INTEGER NOT NULL DEFAULT 0") || changed;
+    const addedPlan = ensureColumn(sqlite, "users", "plan", "TEXT NOT NULL DEFAULT 'free'");
+    changed = addedPlan || changed;
+    changed = ensureColumn(sqlite, "users", "label_id", "TEXT") || changed;
+    changed = ensureColumn(sqlite, "users", "staff_invite_token", "TEXT") || changed;
+    changed = ensureColumn(sqlite, "users", "label_name", "TEXT") || changed;
+    changed = ensureColumn(sqlite, "users", "label_logo_filename", "TEXT") || changed;
     changed = ensureColumn(sqlite, "users", "avatar_filename", "TEXT") || changed;
     changed = ensureColumn(sqlite, "users", "deleted_at", "INTEGER") || changed;
     sqlite.exec(`UPDATE users SET role = 'superadmin', subscribed = 1 WHERE role = 'admin'`);
     sqlite.exec(`UPDATE users SET role = 'member' WHERE role = 'composer'`);
+    if (addedPlan) {
+      sqlite.exec(`UPDATE users SET plan = 'subscriber' WHERE subscribed = 1 AND role != 'superadmin'`);
+      sqlite.exec(`UPDATE users SET plan = 'free' WHERE subscribed = 0 AND (plan IS NULL OR plan = '')`);
+    }
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_staff_invite ON users(staff_invite_token)`);
   }
   if (columns(sqlite, "tracks").length > 0) {
     changed = ensureColumn(sqlite, "tracks", "composer_id", "TEXT") || changed;
@@ -269,7 +285,7 @@ function seedOwner(db: ReturnType<typeof drizzle<typeof schema>>) {
   if (existing) {
     if (existing.role !== "superadmin" || !existing.subscribed) {
       db.update(schema.users)
-        .set({ role: "superadmin", subscribed: 1 })
+        .set({ role: "superadmin", subscribed: 1, plan: "subscriber" })
         .where(eq(schema.users.id, existing.id))
         .run();
     }
@@ -283,6 +299,7 @@ function seedOwner(db: ReturnType<typeof drizzle<typeof schema>>) {
       name: email.split("@")[0] || "Admin",
       role: "superadmin",
       subscribed: 1,
+      plan: "subscriber",
       passwordHash: hashSync(password, 10),
       createdAt: Date.now(),
     })

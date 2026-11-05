@@ -1,4 +1,4 @@
-import { canCreateProjects, getSessionUser } from "@/lib/auth";
+import { canCreateProjects, getSessionUser, projectOwnerIdFor } from "@/lib/auth";
 import { createProject, listProjectsForUser } from "@/lib/data";
 import { jsonError } from "@/lib/http";
 
@@ -15,6 +15,6 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { name?: string } | null;
   const name = body?.name?.trim();
   if (!name) return jsonError("Project name is required");
-  const project = createProject(user.userId, name);
+  const project = createProject(projectOwnerIdFor(user), name);
   return Response.json({ project });
 }

@@ -1,14 +1,17 @@
 import { getIronSession, type SessionOptions } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { findUserById, normalizeUserRole } from "@/lib/data";
-import type { PlanLabel, UserRole } from "@/lib/types";
+import { findUserById, normalizeAccountPlan, normalizeUserRole } from "@/lib/data";
+import type { AccountPlan, PlanLabel, UserRole } from "@/lib/types";
 
 export type SessionUser = {
   userId: string;
   email: string;
   name: string;
   role: UserRole;
+  plan: AccountPlan;
+  /** Set for staff — the label account that owns the project feed. */
+  labelId: string | null;
   subscribed: boolean;
 };
 
@@ -37,13 +40,31 @@ export function isSuperadmin(user: Pick<SessionUser, "role">) {
   return user.role === "superadmin";
 }
 
-export function canCreateProjects(user: Pick<SessionUser, "role" | "subscribed">) {
-  return user.role === "superadmin" || user.subscribed;
+export function canCreateProjects(user: Pick<SessionUser, "role" | "plan" | "subscribed">) {
+  if (user.role === "superadmin") return true;
+  return user.plan === "subscriber" || user.plan === "label" || user.plan === "staff" || user.subscribed;
 }
 
-export function planLabel(user: Pick<SessionUser, "role" | "subscribed">): PlanLabel {
+/** Label accounts, and superadmins, who keep label branding and staff on their own account. */
+export function isLabelAccount(user: Pick<SessionUser, "plan" | "role">) {
+  return user.plan === "label" || user.role === "superadmin";
+}
+
+export function isLabelStaff(user: Pick<SessionUser, "plan" | "labelId">) {
+  return user.plan === "staff" && Boolean(user.labelId);
+}
+
+/** Project owner id for creates — staff create under the label. */
+export function projectOwnerIdFor(user: Pick<SessionUser, "userId" | "plan" | "labelId">) {
+  if (user.plan === "staff" && user.labelId) return user.labelId;
+  return user.userId;
+}
+
+export function planLabel(user: Pick<SessionUser, "role" | "plan" | "subscribed">): PlanLabel {
   if (user.role === "superadmin") return "Superadmin";
-  if (user.subscribed) return "Subscriber";
+  if (user.plan === "label") return "Label";
+  if (user.plan === "staff") return "Staff";
+  if (user.plan === "subscriber" || user.subscribed) return "Subscriber";
   return "Free member";
 }
 
@@ -56,12 +77,16 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!session.userId) return null;
   const user = findUserById(session.userId);
   if (!user) return null;
+  const role = normalizeUserRole(user.role);
+  const plan = role === "superadmin" ? ("subscriber" as const) : normalizeAccountPlan(user.plan, user.subscribed);
   return {
     userId: user.id,
     email: user.email,
     name: user.name || user.email.split("@")[0],
-    role: normalizeUserRole(user.role),
-    subscribed: Boolean(user.subscribed) || normalizeUserRole(user.role) === "superadmin",
+    role,
+    plan,
+    labelId: plan === "staff" ? user.labelId ?? null : null,
+    subscribed: plan !== "free" || role === "superadmin",
   };
 }
 

@@ -47,7 +47,12 @@ export async function POST(request: Request) {
       return jsonError("This track is approved. Upload finals and stems instead.", 403);
     }
   } else {
-    trackId = createTrack(projectId, title || titleFromFilename(file.name), user.userId).id;
+    // Studio/label admin tracks belong to the project owner; composers own their uploads.
+    const composerId = access.kind === "admin" ? access.project.ownerId : user.userId;
+    if (access.kind !== "admin" && access.kind !== "composer") {
+      return jsonError("Not allowed to add tracks", 403);
+    }
+    trackId = createTrack(projectId, title || titleFromFilename(file.name), composerId).id;
   }
 
   const mimeType = file.type || "application/octet-stream";

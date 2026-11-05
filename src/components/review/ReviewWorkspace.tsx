@@ -50,6 +50,8 @@ type Props = {
   shareToken?: string;
   ownerName?: string;
   userId?: string;
+  /** Superadmin can manage any track, not only studio-owned ones. */
+  isSuperadmin?: boolean;
   initialTrackId?: string;
   /** When true, fills the app shell main pane instead of the full viewport. */
   embedded?: boolean;
@@ -61,6 +63,7 @@ export function ReviewWorkspace({
   shareToken,
   ownerName,
   userId,
+  isSuperadmin = false,
   initialTrackId,
   embedded = false,
 }: Props) {
@@ -116,8 +119,11 @@ export function ReviewWorkspace({
 
   function ownsTrack(item: { composerId: string | null } | undefined) {
     if (!item || isReviewer || !userId) return false;
+    if (isSuperadmin) return true;
     const ownerId = item.composerId ?? project.ownerId;
-    return ownerId === userId;
+    if (ownerId === userId) return true;
+    // Label staff (and the label account) admin studio-owned tracks as the owner.
+    return isAdmin && ownerId === project.ownerId;
   }
 
   function trackBadgeStatus(item: TrackDto): VersionStatus | null {

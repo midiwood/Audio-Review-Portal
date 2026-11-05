@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ReviewWorkspace } from "@/components/review/ReviewWorkspace";
-import { requireUser } from "@/lib/auth";
+import { isSuperadmin, requireUser } from "@/lib/auth";
 import { getProjectAccess, getProjectById } from "@/lib/data";
 
 export default async function ProjectPage({
@@ -30,6 +30,7 @@ export default async function ProjectPage({
       project={project}
       ownerName={user.name}
       userId={user.userId}
+      isSuperadmin={isSuperadmin(user)}
       initialTrackId={trackId}
       embedded
     />

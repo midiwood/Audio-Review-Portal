@@ -50,7 +50,15 @@ export async function POST(request: Request) {
     }
   } else {
     // Prefer creating the track at /api/storage/sign so Spaces keys use tracks/{id}/…
-    trackId = createTrack(projectId, body?.title?.trim() || titleFromFilename(originalFilename), user.userId).id;
+    const composerId = access.kind === "admin" ? access.project.ownerId : user.userId;
+    if (access.kind !== "admin" && access.kind !== "composer") {
+      return jsonError("Not allowed to add tracks", 403);
+    }
+    trackId = createTrack(
+      projectId,
+      body?.title?.trim() || titleFromFilename(originalFilename),
+      composerId,
+    ).id;
   }
 
   if (!(await spacesObjectExists(storedFilename))) {

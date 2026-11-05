@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsLayout({ children }: { children: ReactNode }) {
   await requireSuperadmin();
-  return <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">{children}</div>;
+  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">{children}</div>;
 }
