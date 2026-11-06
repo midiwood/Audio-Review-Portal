@@ -21,7 +21,34 @@ body {
 
 body {
   font-family: var(--font-sans);
+  font-size: 0.875rem; /* 14px — default body */
+  line-height: 1.5;
   min-height: 100vh;
+}
+
+/* Tight type scale — prefer these over ad-hoc text-[Npx] / tracking-* */
+@layer components {
+  .type-brand {
+    @apply text-xs font-medium tracking-[0.2em] text-brass uppercase;
+  }
+  .type-title {
+    @apply text-base font-medium tracking-tight sm:text-lg;
+  }
+  .type-section {
+    @apply text-xs font-medium tracking-[0.14em] text-mute uppercase;
+  }
+  .type-body {
+    @apply text-sm leading-normal;
+  }
+  .type-meta {
+    @apply text-xs leading-normal text-mute;
+  }
+  .type-ui {
+    @apply text-xs font-medium;
+  }
+  .type-mono {
+    @apply font-mono text-xs tabular-nums;
+  }
 }
 
 ::selection {

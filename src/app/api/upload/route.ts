@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getSessionUser } from "@/lib/auth";
-import { canManageTrackMedia, createTrack, createVersion, getProjectAccess, isTrackApproved } from "@/lib/data";
+import {
+  canManageTrackMedia,
+  createTrack,
+  createVersion,
+  getProjectAccess,
+  getTrack,
+  isTrackApproved,
+} from "@/lib/data";
 import { extensionFor, titleFromFilename } from "@/lib/format";
 import { jsonError } from "@/lib/http";
 import { storedFilePath } from "@/lib/paths";
@@ -40,7 +47,12 @@ export async function POST(request: Request) {
       return jsonError("This track is approved. Upload finals and stems instead.", 403);
     }
   } else {
-    trackId = createTrack(projectId, title || titleFromFilename(file.name), user.userId).id;
+    // Studio/label admin tracks belong to the project owner; composers own their uploads.
+    const composerId = access.kind === "admin" ? access.project.ownerId : user.userId;
+    if (access.kind !== "admin" && access.kind !== "composer") {
+      return jsonError("Not allowed to add tracks", 403);
+    }
+    trackId = createTrack(projectId, title || titleFromFilename(file.name), composerId).id;
   }
 
   const mimeType = file.type || "application/octet-stream";
@@ -54,17 +66,33 @@ export async function POST(request: Request) {
     savePlaybackSidecar(storedFilename, Buffer.from(await playback.arrayBuffer()));
   }
 
-  // Project owner / studio: live in review immediately.
-  // Composer: draft until they publish for review.
-  const asDraft = access.kind !== "admin";
+  // Always live in review on upload (no draft step).
   const version = createVersion({
     trackId,
     originalFilename: file.name,
     storedFilename,
     mimeType,
-    status: asDraft ? "in_progress" : "review_requested",
-    unreadForAdmin: false,
+    status: "review_requested",
+    unreadForAdmin: access.kind !== "admin",
   });
+
+  if (access.kind !== "admin") {
+    const track = getTrack(trackId);
+    if (track) {
+      const { notifyUpload } = await import("@/lib/notify");
+      await notifyUpload({
+        projectId,
+        projectName: access.project.name,
+        ownerId: access.project.ownerId,
+        actorUserId: user.userId,
+        trackId,
+        trackTitle: track.title,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        isNewTrack: version.versionNumber <= 1,
+      });
+    }
+  }
 
   return Response.json({ version, trackId });
 }

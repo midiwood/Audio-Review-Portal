@@ -9,6 +9,8 @@ type Props = {
   canUpload: boolean;
   canDownloadZip?: boolean;
   busy?: boolean;
+  /** Hide the section title when revealed from a track-row button. */
+  compact?: boolean;
   onUpload: (kind: DeliveryKind, files: File[]) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 };
@@ -117,7 +119,7 @@ function DropTile({
         aria-label={`Drop or choose ${label.toLowerCase()}`}
       >
         <UploadIcon className="h-4 w-4" />
-        <span className="text-[10px] font-medium tracking-wide uppercase">{label}</span>
+        <span className="text-xs font-medium tracking-[0.14em] uppercase">{label}</span>
       </button>
       <input
         ref={inputRef}
@@ -145,13 +147,22 @@ function FileGroup({
 }) {
   return (
     <div className="space-y-1">
-      <p className="text-[10px] font-medium tracking-wide text-mute uppercase">{title}</p>
+      <p className="type-section">{title}</p>
       <ul className="space-y-1">{children}</ul>
     </div>
   );
 }
 
-export function DeliveryPanel({ trackId, deliveries, canUpload, canDownloadZip, busy, onUpload, onDelete }: Props) {
+export function DeliveryPanel({
+  trackId,
+  deliveries,
+  canUpload,
+  canDownloadZip,
+  busy,
+  compact,
+  onUpload,
+  onDelete,
+}: Props) {
   const finalRef = useRef<HTMLInputElement>(null);
   const stemRef = useRef<HTMLInputElement>(null);
   const [zipping, setZipping] = useState(false);
@@ -188,24 +199,31 @@ export function DeliveryPanel({ trackId, deliveries, canUpload, canDownloadZip, 
     }
   }
 
+  const zipButton =
+    canDownloadZip && deliveries.length > 0 ? (
+      <button
+        type="button"
+        disabled={zipping || busy}
+        onClick={() => void downloadAll()}
+        className="type-ui inline-flex items-center gap-1 rounded-md bg-brass px-2 py-1 text-bg hover:brightness-110 disabled:opacity-40"
+        title={zipping ? "Zipping…" : "Download all"}
+        aria-label={zipping ? "Zipping" : "Download all"}
+      >
+        <DownloadIcon className="h-3.5 w-3.5" />
+        {zipping ? "…" : "All"}
+      </button>
+    ) : null;
+
   return (
-    <section className="space-y-3 rounded-lg border border-line p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium tracking-wide text-mute uppercase">Finals & stems</h3>
-        {canDownloadZip && deliveries.length > 0 && (
-          <button
-            type="button"
-            disabled={zipping || busy}
-            onClick={() => void downloadAll()}
-            className="inline-flex items-center gap-1 rounded-md bg-brass px-2 py-1 text-xs font-medium text-bg hover:brightness-110 disabled:opacity-40"
-            title={zipping ? "Zipping…" : "Download all"}
-            aria-label={zipping ? "Zipping" : "Download all"}
-          >
-            <DownloadIcon className="h-3.5 w-3.5" />
-            {zipping ? "…" : "All"}
-          </button>
-        )}
-      </div>
+    <section className={`space-y-3 ${compact ? "px-1 py-1" : "rounded-lg border border-line p-3"}`}>
+      {(compact ? Boolean(zipButton) : true) && (
+        <div className={`flex items-center gap-2 ${compact ? "justify-end" : "justify-between"}`}>
+          {!compact && (
+            <h3 className="type-section">Finals & stems</h3>
+          )}
+          {zipButton}
+        </div>
+      )}
 
       {canUpload && (
         <div className="grid grid-cols-2 gap-2">

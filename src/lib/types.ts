@@ -3,12 +3,39 @@ export const VERSION_STATUSES = [
   "review_requested",
   "changes_requested",
   "approved",
+  "rejected",
 ] as const;
 
 export type VersionStatus = (typeof VERSION_STATUSES)[number];
 export type UserRole = "superadmin" | "member";
+/** Account plan for members. Superadmin is role-based, not a plan. */
+export type AccountPlan = "free" | "subscriber" | "label" | "staff";
 export type WorkspaceMode = "admin" | "composer" | "reviewer";
-export type PlanLabel = "Superadmin" | "Subscriber" | "Free member";
+export type PlanLabel = "Superadmin" | "Subscriber" | "Label" | "Staff" | "Free member";
+
+/** Enriched row for the superadmin users dashboard. */
+export type AdminUserDto = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  plan: AccountPlan;
+  subscribed: boolean;
+  planLabel: PlanLabel;
+  avatarUrl: string | null;
+  createdAt: number;
+  ownedProjectCount: number;
+  memberProjectCount: number;
+  /** Labels only — how many staff belong to them. */
+  staffCount: number;
+  /** Labels only — org display name. */
+  labelName: string | null;
+  labelLogoUrl: string | null;
+  /** Staff only — which label they belong to. */
+  labelAccountId: string | null;
+  labelAccountName: string | null;
+  deletedAt?: number;
+};
 
 export type CommentDto = {
   id: string;
@@ -70,6 +97,8 @@ export type TrackDto = {
   composerId: string | null;
   composerName: string;
   unread: boolean;
+  /** Unread comment notification for the current viewer. */
+  hasNewComment: boolean;
   createdAt: number;
   versions: VersionDto[];
   references: ReferenceDto[];
@@ -96,7 +125,24 @@ export type ProjectListItem = {
   createdAt: number;
   trackCount: number;
   unreadCount: number;
-  ownership: "owned" | "shared";
+  ownership: "owned" | "shared" | "label";
+};
+
+/** Flattened track row for the cross-project Library view. */
+export type LibraryTrackDto = {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  composerName: string;
+  composerAvatarUrl: string | null;
+  versionId: string;
+  versionNumber: number;
+  status: VersionStatus;
+  durationSeconds: number | null;
+  originalFilename: string;
+  unread: boolean;
+  href: string;
 };
 
 export type NotificationType = "comment" | "version" | "track" | "status";

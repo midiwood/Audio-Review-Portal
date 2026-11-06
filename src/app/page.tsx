@@ -28,7 +28,7 @@ export default async function HomePage() {
       />
 
       <header className="relative z-10 mx-auto flex max-w-5xl items-center justify-between px-6 pt-8 sm:px-10">
-        <p className="text-xs tracking-[0.28em] text-brass uppercase">Audio Review</p>
+        <p className="type-brand">Audio Review</p>
         <nav className="flex items-center gap-5 text-sm">
           <Link href="/login" className="text-mute transition-colors duration-300 hover:text-ink">
             Sign in

@@ -13,7 +13,7 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8">
         <div>
-          <p className="text-xs tracking-[0.25em] text-brass uppercase">Audio Review</p>
+          <p className="type-brand">Audio Review</p>
           <h1 className="mt-2 text-3xl font-medium">Composer invite</h1>
         </div>
         <JoinForm token={token} projectName={project.name} />

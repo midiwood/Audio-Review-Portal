@@ -7,11 +7,18 @@ export function needsMp3Playback(filename: string, mimeType = "") {
   return true;
 }
 
-export function audioUrl(versionId: string, shareToken?: string, file: "play" | "original" | "download" = "play") {
+export function audioUrl(
+  versionId: string,
+  shareToken?: string,
+  file: "play" | "original" | "download" | "preview" = "play",
+) {
   const params = new URLSearchParams();
   if (shareToken) params.set("token", shareToken);
   if (file === "download") {
     params.set("original", "1");
+    params.set("download", "1");
+  } else if (file === "preview") {
+    params.set("play", "1");
     params.set("download", "1");
   } else if (file === "original") {
     params.set("original", "1");
@@ -24,6 +31,12 @@ export function audioUrl(versionId: string, shareToken?: string, file: "play" | 
 export function downloadFilename(originalFilename: string) {
   const base = originalFilename.replace(/^.*[/\\]/, "").replace(/[\r\n"]/g, "").trim();
   return base || "track";
+}
+
+/** Preview/mp3 download name derived from the original upload. */
+export function previewDownloadFilename(originalFilename: string) {
+  const base = downloadFilename(originalFilename).replace(/\.[^.]+$/, "");
+  return `${base || "track"}.mp3`;
 }
 
 export function contentDisposition(originalFilename: string) {

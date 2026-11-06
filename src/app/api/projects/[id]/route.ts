@@ -13,6 +13,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     composerId: user.userId,
     includeComments: true,
     includeInvite: access.kind === "admin",
+    viewerUserId: user.userId,
   });
   if (!project) return jsonError("Not found", 404);
   return Response.json({ project, access: access.kind });

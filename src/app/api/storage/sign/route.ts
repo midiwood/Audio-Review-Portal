@@ -78,10 +78,14 @@ export async function POST(request: Request) {
       }
     } else {
       // Allocate track folder before upload so Spaces keys live under tracks/{id}/versions/
+      const composerId = access.kind === "admin" ? access.project.ownerId : user.userId;
+      if (access.kind !== "admin" && access.kind !== "composer") {
+        return jsonError("Not allowed to add tracks", 403);
+      }
       trackId = createTrack(
         projectId,
         body.title?.trim() || titleFromFilename(filename),
-        user.userId,
+        composerId,
       ).id;
     }
     const key = makeVersionSpacesKey(trackId, filename, mimeType);
